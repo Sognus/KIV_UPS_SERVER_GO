@@ -1,8 +1,11 @@
 package communication
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -28,6 +31,8 @@ func FD_ZERO(p *syscall.FdSet) {
 
 // Starts server Listener
 func Start(serverContext *server) {
+	defer (*serverContext).WaitGroup.Done()
+
 	fmt.Printf("Starting server..\n")
 
 	if serverContext == nil {
@@ -86,12 +91,18 @@ func Start(serverContext *server) {
 				ipv4 := fmt.Sprintf("%d.%d.%d.%d", address.Addr[0], address.Addr[1], address.Addr[2], address.Addr[3])
 				port := address.Port
 
+				reader, writer := io.Pipe()
+				bufferReader := bufio.NewReader(reader)
+				bufferWriter := bufio.NewWriter(writer)
+
 				newClient := client{
 					socket:  newSocketDescriptor,
 					ip:      ipv4,
 					port:    port,
 					address: newAddress,
-					buffer:  make(chan byte, 512),
+					buffer: bufio.NewReadWriter(bufferReader, bufferWriter),
+					reader: reader,
+					writer: writer,
 				}
 
 				errClientAdd := AddClient(serverContext, &newClient)
@@ -119,21 +130,78 @@ func Start(serverContext *server) {
 				// Make 64 byte buffer
 				buffer := make([]byte, 32)
 				// Receive data from socket
-				_, _, errRecv := syscall.Recvfrom(client.socket, buffer, 0)
+				n, _, errRecv := syscall.Recvfrom(client.socket, buffer, 0)
+
+				fmt.Printf("Client #%d received %d\n", client.socket, n)
+
+				if n == 0 {
+					_ = client.buffer.Flush()
+					_ = client.writer.Close()
+					_ = client.reader.Close()
+					_ = RemoveClient(serverContext, client.socket)
+					continue
+				}
 
 				if errRecv != nil {
 					fmt.Printf("Receive error for client #%d: %s\n", client.socket, errRecv.Error())
 				} else {
 					// Write received data to client buffer
-					for _, value := range buffer {
-						client.buffer <- value
+					_, errBuffW := client.buffer.Write(buffer)
+					errFlushW := client.buffer.Flush()
+
+					if errBuffW != nil {
+						fmt.Printf("Buffer Write error for client #%d: %s\n", client.socket, errBuffW.Error())
 					}
 
-					// TODO: DELETE
-					Broadcast(serverContext, buffer)
+					if errFlushW != nil {
+						fmt.Printf("Buffer Flush error for client #%d: %s\n", client.socket, errBuffW.Error())
+					}
 				}
 
 			}
 		}
 	}
+}
+
+func Process(serverContext *server) {
+	defer (*serverContext).WaitGroup.Done()
+
+	fmt.Printf("Messages processing started!\n")
+	defer fmt.Printf("Message proccessing terminated!\n")
+
+	if serverContext == nil {
+		msg := "Could not start server listener: server structure is NULL\n"
+		fmt.Printf(msg)
+		return
+	}
+
+	for {
+		fmt.Printf("Processing tick\n")
+
+
+		for _, currentClient := range (*serverContext).clients{
+			go func(currentClient *client) {
+
+				data := make([]byte, 32)
+				n, errBuffRead := currentClient.buffer.Read(data)
+				_ = currentClient.buffer.Flush()
+
+				if errBuffRead != nil{
+					return
+				}
+
+				if n < 1 {
+					return
+				}
+
+				fmt.Printf("#%d> %v\n", currentClient.socket, data)
+				msg := fmt.Sprintf("#%d> %s", currentClient.socket, string(data))
+				_ = Broadcast(serverContext, []byte(msg))
+
+			}(currentClient)
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
 }

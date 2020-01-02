@@ -1,6 +1,10 @@
 package communication
 
-import "syscall"
+import (
+	"bufio"
+	"io"
+	"syscall"
+)
 
 type client struct {
 	// Socket descriptor
@@ -12,5 +16,7 @@ type client struct {
 	// Raw Socket address
 	address syscall.Sockaddr
 	// Clients buffer
-	buffer chan byte
+	buffer *bufio.ReadWriter
+	reader *io.PipeReader
+	writer *io.PipeWriter
 }

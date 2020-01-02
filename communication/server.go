@@ -46,7 +46,6 @@ func Init(ip string, port string) (*server, error) {
 
 	if errBind != nil {
 		msg := fmt.Sprintf("Unable to initialize server: Could not bind address to server\n")
-		fmt.Printf(msg)
 		return nil, errors.New(msg)
 	}
 
@@ -76,8 +75,24 @@ func AddClient(serverContext *server, newClient *client) error {
 
 // Removes client from server
 func RemoveClient(serverContext *server, socketDescriptor int ) error {
-	// TODO: Implement
-	return errors.New("not yet implemented")
+	// Check for socket error
+	if serverContext == nil {
+		return errors.New("Could not remove TCP client: server structure is NULL\n")
+	}
+
+	clients := make([]*client, 0, len((*serverContext).clients))
+
+	for _, client := range (*serverContext).clients {
+		if client.socket == socketDescriptor {
+			fmt.Printf("Client #%d from %s port %d disconnected\n", client.socket, client.ip, client.port)
+			continue
+		} else {
+			clients = append(clients, client)
+		}
+	}
+
+	(*serverContext).clients = clients
+	return nil
 }
 
 // Broadcasts message to all connected clients
