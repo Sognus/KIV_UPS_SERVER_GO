@@ -1,22 +1,20 @@
 package communication
 
 import (
-	"bufio"
 	"io"
 	"syscall"
 )
 
-type client struct {
+type Client struct {
 	// Socket descriptor
-	socket int
+	Socket int
 	// Ipv4
 	ip string
 	// TCP port
 	port int
 	// Raw Socket address
 	address syscall.Sockaddr
-	// Clients buffer
-	buffer *bufio.ReadWriter
-	reader *io.PipeReader
+	// Clients Reader and Writer
+	Reader *io.PipeReader
 	writer *io.PipeWriter
 }

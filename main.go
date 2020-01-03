@@ -25,8 +25,6 @@ func main() {
 	// Run goroutines
 	(*serverContext).WaitGroup.Add(1)
 	go communication.Start(serverContext)
-	(*serverContext).WaitGroup.Add(1)
-	go communication.Process(serverContext)
 
 	// Wait for all goroutines to end
 	(*serverContext).WaitGroup.Wait()
