@@ -86,7 +86,7 @@ func AddClient(serverContext *server, newClient *Client) error {
 	(*serverContext).clients[newClient.Socket] = newClient
 
 	// Start Decoder for client
-	go Decoder(newClient)
+	go Decoder(serverContext ,newClient)
 
 	return nil
 }
