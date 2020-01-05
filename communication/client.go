@@ -6,6 +6,7 @@ import (
 )
 
 type Client struct {
+	UID int
 	// Socket descriptor
 	Socket int
 	// Ipv4

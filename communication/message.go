@@ -17,24 +17,26 @@ const (
 	headEnd        = '|'
 
 	// Wait limits before decode error
-	limitStart = 128
+	limitStart = 512
 	limitHeader = 64
-	limitInt = 20
+	limitInt = 32
 	limitString = 128
 
 	// Error threshold
-	errorThreshold = 0.66
+	errorThreshold = 0.66666
 )
 
-type message struct {
+type Message struct {
 	// Message ID
-	id int
+	Id int
 	// Message return ID
-	rid int
+	Rid int
 	// Message type
-	msg int
+	Msg int
+	// Message source (0 = server, >0 = client)
+	Source int
 	// Message content
-	content map[string]string
+	Content map[string]string
 
 }
 
@@ -61,128 +63,133 @@ func isControl(character byte) bool {
 	return false
 }
 
-func Decoder(serverContext *server, client *Client) {
+func Decoder(serverContext *Server, client *Client) {
 	buffer := bufio.NewReader(client.Reader)
 
 	var total int = 0
 	var good int = 0
 
 	for {
-		errDecode := Decode(buffer)
+		msg, errDecode := Decode(buffer)
 
 		if errDecode != nil {
+			// If client was terminated, stop decoding
+			if errDecode == io.ErrClosedPipe {
+				_ = RemoveClient(serverContext, client.Socket)
+				return
+			}
 			total++
 		} else {
 			good++
 			total++
+
+			// Fill source
+			msg.Source = client.UID
+			serverContext.MessageChannel <- *msg
 		}
 
-		bad := total - good
-		var percent float64 = float64(bad / total)
+		var percent float64 = float64(good / total)
 
-		if percent > errorThreshold && total > 16  {
+		if percent < errorThreshold && total > 16  {
+			good = 0
+			total = 0
 			_ = RemoveClient(serverContext, client.Socket)
-			break
+			return
 		}
 
 	}
 }
 
-func Decode(buffer *bufio.Reader) error {
+func Decode(buffer *bufio.Reader) (*Message,error) {
 	// Declare values
 	var errReadHeader error
 	var errReadValue error
 	var valueInt int
 
-	var msg message
+	var msg Message
 	errStart := WaitForStart(buffer)
 
 	// Ignore error
 	if errStart != nil {
-		return errStart
+		return nil,errStart
 	}
 
 	// Read bytes until  "id:" is read
 	_, errReadHeader = ReadPairHeader(buffer, valueDelimiter, "id")
 
 	if errReadHeader != nil {
-		return errReadHeader
+		return nil,errReadHeader
 	}
 
 	// Read bytes for integer value
 	valueInt, errReadValue = ReadPairValueInt(buffer)
 
 	if errReadValue != nil {
-		return errReadValue
+		return nil, errReadValue
 	}
 
-	// Set message ID
-	msg.id = valueInt
+	// Set Message ID
+	msg.Id = valueInt
 
 	// Read bytes until  "rid:" is read
 	_, errReadHeader = ReadPairHeader(buffer, valueDelimiter, "rid")
 
 	if errReadHeader != nil {
-		return errReadHeader
+		return nil, errReadHeader
 	}
 
 	// Read bytes for integer value
 	valueInt, errReadValue = ReadPairValueInt(buffer)
 
 	if errReadValue != nil {
-		return errReadValue
+		return nil, errReadValue
 	}
 
-	// Set message return ID
-	msg.rid = valueInt
+	// Set Message return ID
+	msg.Rid = valueInt
 
 	// Read bytes until "type:" is read
 	_, errReadHeader = ReadPairHeader(buffer, valueDelimiter, "type")
 
 	if errReadHeader != nil {
-		return errReadHeader
+		return nil, errReadHeader
 	}
 
 	// Read bytes for integer value
 	valueInt, errReadValue = ReadPairValueInt(buffer)
 
 	if errReadValue != nil {
-		return errReadValue
+		return nil, errReadValue
 	}
 
-	// Set message type
-	msg.msg = valueInt
+	// Set Message type
+	msg.Msg = valueInt
 
 	// Expect header end byte
 	errExpect := ExpectByte(buffer, headEnd)
 
 	if errExpect != nil {
-		return errExpect
+		return nil, errExpect
 	}
 
-	// Read message content
-	msg.content = make(map[string]string)
+	// Read Message content
+	msg.Content = make(map[string]string)
 
 
 	for {
 		headerData, errReadHeader := ReadPairHeaderAny(buffer, valueDelimiter)
 
 		if errReadHeader != nil {
-			return errReadHeader
+			return nil,errReadHeader
 		}
-
-		fmt.Printf("PairHeader: %s\n", headerData)
 
 		valueData, errReadValue := ReadPairValueString(buffer)
 
 		if errReadValue != nil {
-			return errReadValue
+			return nil,errReadValue
 		}
 
-		fmt.Printf("PairValue: %s\n", valueData)
-
-		fmt.Printf("msg.content[%s] = %s\n", headerData, valueData)
-		msg.content[string(headerData)] = valueData
+		msg.Content[string(headerData)] = valueData
 
 		errPeek := PeekExpectByte(buffer, endCharacter)
 
@@ -190,7 +197,7 @@ func Decode(buffer *bufio.Reader) error {
 		if errPeek != nil {
 			continue
 		} else {
-			return nil
+			return &msg,nil
 		}
 	}
 }
@@ -207,9 +214,6 @@ func WaitForStart(reader io.Reader) error {
 			return errRead
 		}
 
-		if startBuffer[0] == 0 {
-			continue
-		}
 
 		if startBuffer[0] == startCharacter {
 			return nil
@@ -307,7 +311,7 @@ func ReadPairHeaderAny(reader io.Reader, character byte) ([]byte, error) {
 	}
 }
 
-// Reads bytes and detects given header in message - escape not accepted
+// Reads bytes and detects given header in Message - escape not accepted
 func ReadPairHeader(reader io.Reader, character byte, expected string) ([]byte, error) {
 	var buffer []byte = make([]byte, 0, 0)
 	var limit int = limitHeader
@@ -322,6 +326,11 @@ func ReadPairHeader(reader io.Reader, character byte, expected string) ([]byte, 
 
 		if limit == 0 {
 			return nil, errors.New("readPairHeader: limit exceeded")
+		}
+
+		// Catch unexpected control character
+		if isControl(characterBuffer[0]) && characterBuffer[0] != character {
+			return nil, errors.New("unexpected control character")
 		}
 
 		// When we reach delimiter character we stop

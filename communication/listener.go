@@ -27,14 +27,14 @@ func FD_ZERO(p *syscall.FdSet) {
 	}
 }
 
-// Starts server Listener
-func Start(serverContext *server) {
+// Starts Server Listener
+func Start(serverContext *Server) {
 	defer (*serverContext).WaitGroup.Done()
 
-	fmt.Printf("Starting server..\n")
+	fmt.Printf("Starting Server..\n")
 
 	if serverContext == nil {
-		fmt.Printf("Could not start server listener: server structure is NULL\n")
+		fmt.Printf("Could not start Server listener: Server structure is NULL\n")
 		return
 	}
 
@@ -52,17 +52,17 @@ func Start(serverContext *server) {
 		// Insert master set into FdSet
 		FD_SET(rfds, (*serverContext).masterSocket)
 
-		// Add connected clients to FdSet
+		// Add connected Clients to FdSet
 		maxSD := (*serverContext).masterSocket
 
-		for _, client := range (*serverContext).clients {
+		for _, client := range (*serverContext).Clients {
 			FD_SET(rfds, client.Socket)
 			if client.Socket > maxSD {
 				maxSD = client.Socket
 			}
 		}
 
-		// Call select syscall to determine active clients
+		// Call select syscall to determine active Clients
 		_, errSelect := syscall.Select(maxSD+1, rfds, nil, nil, nil)
 
 		if errSelect != nil {
@@ -70,7 +70,7 @@ func Start(serverContext *server) {
 			continue
 		}
 
-		// Check for master server communication
+		// Check for master Server communication
 		if FD_ISSET(rfds, (*serverContext).masterSocket) {
 			newSocketDescriptor, newAddress, errAccept := syscall.Accept((*serverContext).masterSocket)
 
@@ -85,6 +85,7 @@ func Start(serverContext *server) {
 				reader, writer := io.Pipe()
 
 				newClient := Client{
+					UID: serverContext.NextClientID,
 					Socket:  newSocketDescriptor,
 					ip:      ipv4,
 					port:    port,
@@ -93,6 +94,9 @@ func Start(serverContext *server) {
 					writer:  writer,
 				}
 
+				// Increment UID
+				serverContext.NextClientID++
+
 				errClientAdd := AddClient(serverContext, &newClient)
 
 				if errClientAdd != nil {
@@ -100,19 +104,19 @@ func Start(serverContext *server) {
 
 				} else {
 					// Inform terminal
-					fmt.Printf("Client connected: #%d from %s on port %d\n", newClient.Socket, newClient.ip,
+					fmt.Printf("Client connected: #%d from %s on port %d\n", newClient.UID, newClient.ip,
 						newClient.port)
 
 					// Inform connected client
-					msg := "Welcome to Pong server!\n"
+					msg := "Welcome to Pong Server!\n"
 					_, _ = syscall.Write(newClient.Socket, []byte(msg))
 				}
 
 			}
 		}
 
-		// Check for clients socket activity
-		for _, client := range (*serverContext).clients {
+		// Check for Clients socket activity
+		for _, client := range (*serverContext).Clients {
 			// Client activity
 			if FD_ISSET(rfds, client.Socket) {
 				// Make 64 byte buffer
@@ -121,16 +125,20 @@ func Start(serverContext *server) {
 				n, errRecv := syscall.Read(client.Socket, buffer)
 
 				if errRecv != nil {
-					fmt.Printf("Client #%d: Read error: %s\n", client.Socket, errRecv.Error())
+					fmt.Printf("Client #%d: Read error: %s\n", client.UID, errRecv.Error())
 					break
 				}
 
 				if n == 0 {
 					// Client was disconnected
 					_ = RemoveClient(serverContext, client.Socket)
+					// TODO:
+					//  	rewrite -> send message from server (id:0) to disconnect client via manager
+					//		when disconnect delete from server context and set player that has it to nil
+
 				} else {
 					// Write data
-					_, _ = client.writer.Write(buffer)
+					_, _ = client.writer.Write(buffer[:n])
 				}
 
 			}

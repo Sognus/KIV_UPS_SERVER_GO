@@ -9,24 +9,28 @@ import (
 import "../parsing"
 
 // Server structure
-type server struct {
+type Server struct {
 	// Master socket
 	masterSocket int
 	// Clients
-	clients map[int]*Client
+	Clients map[int]*Client
+	// Destination to send parsed messages to
+	MessageChannel chan Message
 	// Wait for all goroutines
 	WaitGroup sync.WaitGroup
+	// Next client ID
+	NextClientID int
 }
 
-// Prepares server structure to listen
-func Init(ip string, port string) (*server, error) {
+// Prepares Server structure to listen
+func Init(ip string, port string) (*Server, error) {
 	fmt.Printf("Server initialization started..\n")
 
 	// Parse address from func argument
 	address, errAddr := parsing.AddressFromString(ip, port)
 
 	if errAddr != nil {
-		msg := fmt.Sprintf("Unable to initialize server: %s\n", errAddr.Error())
+		msg := fmt.Sprintf("Unable to initialize Server: %s\n", errAddr.Error())
 		return nil, errors.New(msg)
 	}
 
@@ -35,14 +39,14 @@ func Init(ip string, port string) (*server, error) {
 
 	// Check for socket error
 	if errSocket != nil {
-		msg := "Unable to initialize server: Could not create master socket!\n"
+		msg := "Unable to initialize Server: Could not create master socket!\n"
 		return nil, errors.New(msg)
 	}
 
 	// Set socket options to allow address reuse
 	errOpts := syscall.SetsockoptInt(masterSocket, syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
 	if errOpts != nil {
-		msg := "Unable to initialize server: Could not set master socket options\n"
+		msg := "Unable to initialize Server: Could not set master socket options\n"
 		return nil, errors.New(msg)
 	}
 
@@ -50,7 +54,7 @@ func Init(ip string, port string) (*server, error) {
 	errBind := syscall.Bind(masterSocket, address)
 
 	if errBind != nil {
-		msg := fmt.Sprintf("Unable to initialize server: Could not bind address to server\n")
+		msg := fmt.Sprintf("Unable to initialize Server: Could not bind address to Server\n")
 		return nil, errors.New(msg)
 	}
 
@@ -58,32 +62,34 @@ func Init(ip string, port string) (*server, error) {
 	errListen := syscall.Listen(masterSocket, 5)
 
 	if errListen != nil {
-		msg := fmt.Sprintf("Unable to initialize server: Could not start listener!\n")
+		msg := fmt.Sprintf("Unable to initialize Server: Could not start listener!\n")
 		return nil, errors.New(msg)
 	}
 
-	// Create server context
-	serverContext := server{
-		masterSocket: masterSocket,
-		clients:      make(map[int]*Client),
-		WaitGroup:    sync.WaitGroup{},
+	// Create Server context
+	serverContext := Server{
+		masterSocket:   masterSocket,
+		Clients:        make(map[int]*Client),
+		WaitGroup:      sync.WaitGroup{},
+		MessageChannel: nil,
+		NextClientID: 1,
 	}
 
 	// Inform terminal
 	fmt.Printf("Server initialization completed\n")
 
-	// Return server context
+	// Return Server context
 	return &serverContext, nil
 }
 
-// Register new TCP client with server structure
-func AddClient(serverContext *server, newClient *Client) error {
+// Register new TCP client with Server structure
+func AddClient(serverContext *Server, newClient *Client) error {
 	if serverContext == nil {
-		return errors.New("Could not register TCP client: server structure is NULL\n")
+		return errors.New("Could not register TCP client: Server structure is NULL\n")
 	}
 
 	// Add Client to storage
-	(*serverContext).clients[newClient.Socket] = newClient
+	(*serverContext).Clients[newClient.UID] = newClient
 
 	// Start Decoder for client
 	go Decoder(serverContext ,newClient)
@@ -91,14 +97,14 @@ func AddClient(serverContext *server, newClient *Client) error {
 	return nil
 }
 
-// Removes client from server
-func RemoveClient(serverContext *server, socketDescriptor int ) error {
+// Removes client from Server
+func RemoveClient(serverContext *Server, socketDescriptor int ) error {
 	// Check for socket error
 	if serverContext == nil {
-		return errors.New("Could not remove TCP client: server structure is NULL\n")
+		return errors.New("Could not remove TCP client: Server structure is NULL\n")
 	}
 
-	deleteClient, exist := (*serverContext).clients[socketDescriptor]
+	deleteClient, exist := (*serverContext).Clients[socketDescriptor]
 
 	// Remove client from storage if it can be removed
 	if exist {
@@ -106,34 +112,50 @@ func RemoveClient(serverContext *server, socketDescriptor int ) error {
 		_ = deleteClient.writer.Close()
 		_ = syscall.Close(deleteClient.Socket)
 
-		fmt.Printf("Client disconnected: #%d (%s:%d)\n", deleteClient.Socket, deleteClient.ip, deleteClient.port)
+		fmt.Printf("Client disconnected: #%d (%s:%d)\n", deleteClient.UID, deleteClient.ip, deleteClient.port)
 
-		delete((*serverContext).clients, socketDescriptor)
+		delete((*serverContext).Clients, socketDescriptor)
 	}
 
 	return nil
 }
 
-// Broadcasts message to all connected clients - including sender
-func Broadcast(serverContext *server, data []byte) error {
+// Sends data to client
+func Send(serverContext *Server, data []byte, socketSource int) error {
 	if serverContext == nil {
-		return errors.New("could not broadcast message: server structure is NULL\n")
+		return errors.New("could not broadcast Message: Server structure is NULL\n")
 	}
 
-	for _, client := range (*serverContext).clients {
+	for _, client := range (*serverContext).Clients {
+		if client.UID == socketSource {
+			_, _ = syscall.Write(client.Socket, data)
+			break
+		}
+	}
+
+	return nil
+}
+
+// Broadcasts Message to all connected Clients - including sender
+func Broadcast(serverContext *Server, data []byte) error {
+	if serverContext == nil {
+		return errors.New("could not broadcast Message: Server structure is NULL\n")
+	}
+
+	for _, client := range (*serverContext).Clients {
 		_, _ = syscall.Write(client.Socket, data)
 	}
 
 	return nil
 }
 
-// Broadcasts message for currently connected clients - does not send message to sender
-func BroadcastExceptSender(serverContext *server, data []byte, socketSource int) error {
+// Broadcasts Message for currently connected Clients - does not send Message to sender
+func BroadcastExceptSender(serverContext *Server, data []byte, socketSource int) error {
 	if serverContext == nil {
-		return errors.New("could not broadcast message: server structure is NULL\n")
+		return errors.New("could not broadcast Message: Server structure is NULL\n")
 	}
 
-	for _, client := range (*serverContext).clients {
+	for _, client := range (*serverContext).Clients {
 		if client.Socket != socketSource {
 			_, _ = syscall.Write(client.Socket, data)
 		}
