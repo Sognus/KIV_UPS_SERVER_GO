@@ -72,7 +72,7 @@ func Init(ip string, port string) (*Server, error) {
 		Clients:        make(map[int]*Client),
 		WaitGroup:      sync.WaitGroup{},
 		MessageChannel: nil,
-		NextClientID: 1,
+		NextClientID:   1,
 	}
 
 	// Inform terminal
@@ -92,13 +92,13 @@ func AddClient(serverContext *Server, newClient *Client) error {
 	(*serverContext).Clients[newClient.UID] = newClient
 
 	// Start Decoder for client
-	go Decoder(serverContext ,newClient)
+	go Decoder(serverContext, newClient)
 
 	return nil
 }
 
 // Removes client from Server
-func RemoveClient(serverContext *Server, socketDescriptor int ) error {
+func RemoveClient(serverContext *Server, socketDescriptor int) error {
 	// Check for socket error
 	if serverContext == nil {
 		return errors.New("Could not remove TCP client: Server structure is NULL\n")
@@ -121,13 +121,28 @@ func RemoveClient(serverContext *Server, socketDescriptor int ) error {
 }
 
 // Sends data to client
-func Send(serverContext *Server, data []byte, socketSource int) error {
+func SendSocket(serverContext *Server, data []byte, socketSource int) error {
 	if serverContext == nil {
 		return errors.New("could not broadcast Message: Server structure is NULL\n")
 	}
 
 	for _, client := range (*serverContext).Clients {
-		if client.UID == socketSource {
+		if client.Socket == socketSource {
+			_, _ = syscall.Write(client.Socket, data)
+			break
+		}
+	}
+
+	return nil
+}
+
+func SendID(serverContext *Server, data []byte, clientID int) error {
+	if serverContext == nil {
+		return errors.New("could not broadcast Message: Server structure is NULL\n")
+	}
+
+	for _, client := range (*serverContext).Clients {
+		if client.UID == clientID {
 			_, _ = syscall.Write(client.Socket, data)
 			break
 		}
@@ -162,4 +177,19 @@ func BroadcastExceptSender(serverContext *Server, data []byte, socketSource int)
 	}
 
 	return nil
+}
+
+// Returns pointer to client by clients ID (not socket ID)
+func GetClientByID(serverContex *Server, seekID int) (*Client, error) {
+	if serverContex == nil {
+		return nil, errors.New("getClientById: server structure cannot be nill")
+	}
+
+	for _, client := range serverContex.Clients {
+		if client.UID == seekID {
+			return client, nil
+		}
+	}
+
+	return nil, errors.New("getClientById: client does not exist")
 }

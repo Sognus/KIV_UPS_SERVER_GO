@@ -7,11 +7,15 @@ import (
 )
 
 type Manager struct {
+	// Players storage
 	Players map[int]Player
-	MessageChannel chan communication.Message
+	// Games storage
+	GameServers         map[int]*GameServer
+	MessageChannel      chan communication.Message
 	CommunicationServer *communication.Server
-	ServerActions Actions
-	nextID int
+	ServerActions       Actions
+	nextPlayerID        int
+	nextGameID          int
 }
 
 // Initializes
@@ -22,12 +26,15 @@ func ManagerInitialize(communicationServer *communication.Server) (*Manager, err
 
 	var messages chan communication.Message = make(chan communication.Message)
 	var players map[int]Player = make(map[int]Player)
+	var games map[int]*GameServer = make(map[int]*GameServer)
 
 	var manager Manager = Manager{
-		Players:        players,
-		MessageChannel: messages,
+		Players:             players,
+		GameServers:         games,
+		MessageChannel:      messages,
 		CommunicationServer: communicationServer,
-		nextID: 1,
+		nextPlayerID:        1,
+		nextGameID:          1,
 	}
 
 	// Initialize actions
@@ -44,12 +51,27 @@ func ManagerInitialize(communicationServer *communication.Server) (*Manager, err
 	return &manager, nil
 }
 
-func ManagerStart(communicationServer *communication.Server,manager *Manager) {
+func ManagerStart(communicationServer *communication.Server, manager *Manager) {
 	defer communicationServer.WaitGroup.Done()
 
 	for {
-		message := <- communicationServer.MessageChannel
+		message := <-communicationServer.MessageChannel
 		fmt.Printf("Message: %v\n", message)
 		_ = ProcessMessage(manager, &message)
 	}
+}
+
+func ManagerAddGameServer(manager *Manager, server *GameServer) error {
+	if manager == nil {
+		return errors.New("cannot add game server to manager: manager is NULL")
+	}
+
+	if server == nil {
+		return errors.New("cannot add game server to manager: game server is NULL")
+	}
+
+	manager.GameServers[server.UID] = server
+
+	return nil
+
 }
