@@ -104,20 +104,22 @@ func RemoveClient(serverContext *Server, socketDescriptor int) error {
 		return errors.New("Could not remove TCP client: Server structure is NULL\n")
 	}
 
-	deleteClient, exist := (*serverContext).Clients[socketDescriptor]
+	deleteClient, errFindClient := GetClientBySocket(serverContext, socketDescriptor)
 
 	// Remove client from storage if it can be removed
-	if exist {
+	if errFindClient == nil {
 		_ = deleteClient.Reader.Close()
 		_ = deleteClient.writer.Close()
 		_ = syscall.Close(deleteClient.Socket)
 
 		fmt.Printf("Client disconnected: #%d (%s:%d)\n", deleteClient.UID, deleteClient.ip, deleteClient.port)
 
-		delete((*serverContext).Clients, socketDescriptor)
+		delete((*serverContext).Clients, deleteClient.UID)
+		return nil
+	} else {
+		return errors.New("client did not exist")
 	}
 
-	return nil
 }
 
 // Sends data to client
@@ -180,13 +182,27 @@ func BroadcastExceptSender(serverContext *Server, data []byte, socketSource int)
 }
 
 // Returns pointer to client by clients ID (not socket ID)
-func GetClientByID(serverContex *Server, seekID int) (*Client, error) {
-	if serverContex == nil {
+func GetClientByID(serverContext *Server, seekID int) (*Client, error) {
+	if serverContext == nil {
 		return nil, errors.New("getClientById: server structure cannot be nill")
 	}
 
-	for _, client := range serverContex.Clients {
+	for _, client := range serverContext.Clients {
 		if client.UID == seekID {
+			return client, nil
+		}
+	}
+
+	return nil, errors.New("getClientById: client does not exist")
+}
+
+func GetClientBySocket(serverContext *Server, socket int) (*Client, error) {
+	if serverContext == nil {
+		return nil, errors.New("getClientById: server structure cannot be nill")
+	}
+
+	for _, client := range serverContext.Clients {
+		if client.Socket == socket {
 			return client, nil
 		}
 	}

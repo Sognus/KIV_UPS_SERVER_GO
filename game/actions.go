@@ -4,6 +4,7 @@ import (
 	"../communication"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -18,6 +19,9 @@ type Actions struct {
 const (
 	actionRegister = 1000
 	actionCreateGame = 2000
+	actionJoinGame = 2100
+	actionReconnectGame = 2200
+	actionListGames = 2300
 )
 
 // Initialize available actions
@@ -28,6 +32,7 @@ func InitializeActions(manager *Manager) error {
 	// RegisterAction messages
 	manager.ServerActions.global[actionRegister] = RegisterAction
 	manager.ServerActions.global[actionCreateGame] = CreateGameAction
+	manager.ServerActions.global[actionJoinGame] = JoinGameAction
 
 	return nil
 }
@@ -138,8 +143,6 @@ func RegisterAction(manager *Manager, message *communication.Message) error {
 
 // Function to create new game
 func CreateGameAction(manager *Manager, message *communication.Message) error {
-	fmt.Printf("CreateGame invoked\n")
-
 	if manager == nil {
 		return errors.New("createGame: manager cannot be nil")
 	}
@@ -156,7 +159,7 @@ func CreateGameAction(manager *Manager, message *communication.Message) error {
 	}
 
 	// Player exist so we can create game server for him
-	errCreateGame := CreateGame(manager, &player)
+	gameCreated,  errCreateGame := CreateGame(manager, &player)
 
 	if errCreateGame != nil {
 		msg := fmt.Sprintf("createGame: %s", errCreateGame.Error())
@@ -166,10 +169,88 @@ func CreateGameAction(manager *Manager, message *communication.Message) error {
 	}
 
 	// Game was created
-	data := []byte(fmt.Sprintf("<id:%d;rid:0;type:2000;|status:ok;msg:Game created;GameID:%d;>", message.Rid, manager.nextGameID - 1))
+	gameCreated.Player1 = &player
+	data := []byte(fmt.Sprintf("<id:%d;rid:0;type:2000;|status:ok;msg:Game created and joined;GameID:%d;>", message.Rid, gameCreated.UID))
 	_ = communication.SendID(manager.CommunicationServer, data, message.Source)
 
 	return nil
+}
+
+// Function to join game
+func JoinGameAction(manager *Manager, message *communication.Message) error {
+	if manager == nil {
+		return errors.New("createGame: manager cannot be nil")
+	}
+
+	if message == nil {
+		return errors.New("createGame: message cannot be nil")
+	}
+
+	player, errFindPlayer := GetPlayerByClientID(manager, message.Source)
+
+	// Check if player is registered
+	if errFindPlayer != nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Game not joined - User not registered;>", message.Rid, actionJoinGame))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("joinGame: User not registered")
+	}
+
+	// Check if player is in any game
+	_, errConnectedGames := GetPlayersGame(manager, player)
+
+	// No error means player is connected to game
+	if errConnectedGames == nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Game not joined - Already have game;>", message.Rid, actionJoinGame))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("joinGame: Player has already game")
+	}
+
+	// Check if message content contains game ID key
+	gameIDString, idPresent := message.Content["gameID"]
+
+	if !idPresent {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Game not joined - Missing game ID;>", message.Rid, actionJoinGame))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("joinGame: Missing game ID")
+	}
+
+	// Check if game ID is number
+	gameID, errParse := strconv.Atoi(gameIDString)
+
+	if errParse != nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Game not joined - Game ID needs to be number;>", message.Rid, actionJoinGame))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("joinGame: Game ID is not number")
+	}
+
+	// Check if game exist
+	game, errFindGame := GetGameByID(manager, gameID)
+
+	if errFindGame != nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Game not joined - Game with that ID does not exist;>", message.Rid, actionJoinGame))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("joinGame: Game ID is not number")
+	}
+
+	// Assing player to game as Player1
+	if game.Player1 == nil {
+		game.Player1 = player
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:ok;msg:Game #%d joined as Player #1;player:1;>", message.Rid, actionJoinGame, game.UID))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return nil
+	}
+
+	// Assing player to game as Player2
+	if game.Player2 == nil {
+		game.Player2 = player
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:ok;msg:Game #%d joined as Player #2;player:2;>", message.Rid, actionJoinGame, game.UID))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return nil
+	}
+
+	data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Game #%d is FULL;>", message.Rid, actionJoinGame, game.UID))
+	_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+	return errors.New("joinGame: Game is full")
 }
 
 

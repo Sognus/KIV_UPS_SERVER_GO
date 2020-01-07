@@ -139,6 +139,9 @@ func Start(serverContext *Server) {
 				} else {
 					// Write data
 					_, _ = client.writer.Write(buffer[:n])
+					// TODO:
+					//		Add lastCommunication (KeepAlive) to client and update it with every message
+
 				}
 
 			}
