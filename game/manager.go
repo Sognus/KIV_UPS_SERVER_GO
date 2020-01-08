@@ -8,7 +8,7 @@ import (
 
 type Manager struct {
 	// Players storage
-	Players map[int]Player
+	Players map[int]*Player
 	// Games storage
 	GameServers         map[int]*GameServer
 	MessageChannel      chan communication.Message
@@ -25,10 +25,10 @@ func ManagerInitialize(communicationServer *communication.Server) (*Manager, err
 	}
 
 	var messages chan communication.Message = make(chan communication.Message)
-	var players map[int]Player = make(map[int]Player)
+	var players map[int]*Player = make(map[int]*Player)
 	var games map[int]*GameServer = make(map[int]*GameServer)
 
-	var manager Manager = Manager{
+	var manager *Manager = &Manager{
 		Players:             players,
 		GameServers:         games,
 		MessageChannel:      messages,
@@ -38,7 +38,7 @@ func ManagerInitialize(communicationServer *communication.Server) (*Manager, err
 	}
 
 	// Initialize actions
-	errActionsInit := InitializeActions(&manager)
+	errActionsInit := InitializeActions(manager)
 
 	if errActionsInit != nil {
 		msg := fmt.Sprintf("unable to initialize server actions: %s", errActionsInit.Error())
@@ -48,7 +48,7 @@ func ManagerInitialize(communicationServer *communication.Server) (*Manager, err
 	// Add communication channel to communication server
 	communicationServer.MessageChannel = messages
 
-	return &manager, nil
+	return manager, nil
 }
 
 func ManagerStart(communicationServer *communication.Server, manager *Manager) {
@@ -74,4 +74,20 @@ func ManagerAddGameServer(manager *Manager, server *GameServer) error {
 
 	return nil
 
+}
+
+
+func ManagerAddPlayer(manager *Manager, player *Player) error {
+	if manager == nil {
+		return errors.New("cannot add player to manager: manager is NULL")
+	}
+
+	if player == nil {
+		return errors.New("cannot add player to manager: player is NULL")
+	}
+
+
+	manager.Players[player.ID] = player
+
+	return nil
 }

@@ -89,7 +89,7 @@ func AddClient(serverContext *Server, newClient *Client) error {
 	}
 
 	// Add Client to storage
-	(*serverContext).Clients[newClient.UID] = newClient
+	serverContext.Clients[newClient.UID] = newClient
 
 	// Start Decoder for client
 	go Decoder(serverContext, newClient)

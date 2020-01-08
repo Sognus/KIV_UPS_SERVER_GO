@@ -3,6 +3,8 @@ package game
 import (
 	"../communication"
 	"errors"
+	"fmt"
+	"time"
 )
 
 type Player struct {
@@ -10,6 +12,45 @@ type Player struct {
 	ID int
 	userName string
 	lastCommunication int64
+}
+
+
+func CreateUnAuthenticatedPlayer(manager *Manager, clientID int) error {
+	if manager == nil {
+		return errors.New("unable to create empty player, manager is null")
+	}
+
+	client, errFindClient := communication.GetClientByID(manager.CommunicationServer, clientID)
+
+	if errFindClient != nil {
+		return errors.New("unable to create empty player, client does not exist")
+	}
+
+	player := Player{
+		client:            client,
+		ID:                manager.nextPlayerID,
+		userName:          "",
+		lastCommunication: time.Now().Unix(),
+	}
+
+	// Increment new player ID
+	manager.nextPlayerID++
+
+	fmt.Printf("New player created: ID #%d\n", player.ID)
+
+	return ManagerAddPlayer(manager, &player)
+
+
+}
+
+
+// Returns if player is auth
+func isAuthenticated(player *Player) bool {
+	if player == nil {
+		return false
+	}
+
+	return player.userName != ""
 }
 
 func HasGame(manager *Manager, player *Player) (bool, error) {
@@ -40,7 +81,7 @@ func GetPlayerByID(manager *Manager, playerID int) (*Player, error) {
 
 	for _, playerIter := range manager.Players {
 		if playerIter.ID == playerID {
-			return &playerIter, nil
+			return playerIter, nil
 		}
 	}
 
@@ -56,7 +97,7 @@ func GetPlayerByClientID(manager *Manager, clientID int) (*Player, error) {
 
 	for _, playerIter := range manager.Players {
 		if playerIter.client.UID == clientID {
-			return &playerIter, nil
+			return playerIter, nil
 		}
 	}
 

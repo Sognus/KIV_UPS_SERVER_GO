@@ -84,7 +84,7 @@ func Start(serverContext *Server) {
 
 				reader, writer := io.Pipe()
 
-				newClient := Client{
+				newClient := &Client{
 					UID: serverContext.NextClientID,
 					Socket:  newSocketDescriptor,
 					ip:      ipv4,
@@ -97,7 +97,7 @@ func Start(serverContext *Server) {
 				// Increment UID
 				serverContext.NextClientID++
 
-				errClientAdd := AddClient(serverContext, &newClient)
+				errClientAdd := AddClient(serverContext, newClient)
 
 				if errClientAdd != nil {
 					fmt.Printf(errClientAdd.Error())

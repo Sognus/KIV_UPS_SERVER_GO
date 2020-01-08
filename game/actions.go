@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"time"
 )
 
 type Action func(*Manager, *communication.Message) error
@@ -33,6 +32,7 @@ func InitializeActions(manager *Manager) error {
 	manager.ServerActions.global[actionRegister] = RegisterAction
 	manager.ServerActions.global[actionCreateGame] = CreateGameAction
 	manager.ServerActions.global[actionJoinGame] = JoinGameAction
+	manager.ServerActions.global[actionListGames] = GetGamesListAction
 
 	return nil
 }
@@ -45,6 +45,19 @@ func ProcessMessage(manager *Manager, message *communication.Message) error {
 	if message == nil {
 		return errors.New("message cannot be nil")
 	}
+
+	// Create Player if not exist
+	player, errPlayerExist := GetPlayerByClientID(manager, message.Source)
+
+
+	if errPlayerExist != nil {
+		errCreatePlayer := CreateUnAuthenticatedPlayer(manager, message.Source)
+		if errCreatePlayer != nil {
+			return errors.New("unable to create unathenticated player")
+		}
+	}
+
+	player = player
 
 
 	// Process global action
@@ -96,46 +109,31 @@ func RegisterAction(manager *Manager, message *communication.Message) error {
 		}
 	}
 
-	// Detect if user is already connected
-	var clientConnected *communication.Client = nil
-	for _, existPlayer := range manager.Players {
-		if existPlayer.client.UID == message.Source {
-			clientConnected = existPlayer.client
-		}
-	}
-
-	if clientConnected != nil {
-		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:1000;|status:err;msg:multiple accounts not allowed;>", message.Rid))
-		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
-		return errors.New("user could not be registered: client can only be connected once")
-	}
-
 	if nameExist == true {
 		// Name was given but name is already used
 		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:1000;|status:err;msg:username is taken;>", message.Rid))
 		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
 		return errors.New("user could not be registered: name is already used")
 	} else {
-		client, clientExist := manager.CommunicationServer.Clients[message.Source]
+		// Check if player exist
+		player, errPlayerExist := GetPlayerByClientID(manager, message.Source)
 
-		if clientExist == false {
-			data := []byte(fmt.Sprintf("<id:%d;rid:0;type:1000;|status:err;msg:unknown tcp connection;>", message.Rid))
+		if errPlayerExist != nil {
+			data := []byte(fmt.Sprintf("<id:%d;rid:0;type:1000;|status:err;msg:could not create player;>", message.Rid))
 			_ = communication.SendID(manager.CommunicationServer, data, message.Source)
-			return errors.New("user could not be registered: unknown tcp connection")
-		}
-		
-		manager.Players[client.UID] = Player{
-			client:            client,
-			ID:                manager.nextPlayerID,
-			userName:          username,
-			lastCommunication: time.Now().Unix(),
+			return errors.New("user could not be registered: player is nil")
 		}
 
-		// Increase next ID
-		manager.nextPlayerID++
+		// Check if player is registered
+		if isAuthenticated(player) {
+			data := []byte(fmt.Sprintf("<id:%d;rid:0;type:1000;|status:err;msg:You cannot register twice;>", message.Rid))
+			_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+			return errors.New("user could not be registered: cannot register twice")
+		}
 
+		player.userName = username
 		// User successfully registered
-		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:1000;|status:ok;msg:user registered;playerID:%d;>", message.Rid, manager.nextPlayerID- 1))
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:1000;|status:ok;msg:user registered;playerID:%d;>", message.Rid, player.ID))
 		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
 		return nil
 	}
@@ -151,15 +149,29 @@ func CreateGameAction(manager *Manager, message *communication.Message) error {
 		return errors.New("createGame: message cannot be nil")
 	}
 
-	player, playerExist := manager.Players[message.Source]
-	if !playerExist {
+	player, playerFindErr := GetPlayerByClientID(manager, message.Source)
+
+	if playerFindErr != nil {
+		return errors.New("player does not exist - WTF")
+	}
+
+	if !isAuthenticated(player) {
 		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:2000;|status:error;msg:Game not created - User not registered;>", message.Rid))
 		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
 		return errors.New("createGame: Player not registered")
 	}
 
+	// Check if Player is already in game
+	_, errGameExist := GetPlayersGame(manager, player)
+
+	if errGameExist == nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:2000;|status:error;msg:Already in another game;>", message.Rid))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("createGame: already in another game")
+	}
+
 	// Player exist so we can create game server for him
-	gameCreated,  errCreateGame := CreateGame(manager, &player)
+	gameCreated,  errCreateGame := CreateGame(manager, player)
 
 	if errCreateGame != nil {
 		msg := fmt.Sprintf("createGame: %s", errCreateGame.Error())
@@ -169,7 +181,7 @@ func CreateGameAction(manager *Manager, message *communication.Message) error {
 	}
 
 	// Game was created
-	gameCreated.Player1 = &player
+	gameCreated.Player1 = player
 	data := []byte(fmt.Sprintf("<id:%d;rid:0;type:2000;|status:ok;msg:Game created and joined;GameID:%d;>", message.Rid, gameCreated.UID))
 	_ = communication.SendID(manager.CommunicationServer, data, message.Source)
 
@@ -188,9 +200,15 @@ func JoinGameAction(manager *Manager, message *communication.Message) error {
 
 	player, errFindPlayer := GetPlayerByClientID(manager, message.Source)
 
-	// Check if player is registered
 	if errFindPlayer != nil {
-		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Game not joined - User not registered;>", message.Rid, actionJoinGame))
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Game not joined - User does not exist;>", message.Rid, actionJoinGame))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("joinGame: User does not exist")
+	}
+
+	// Check if player is registered
+	if !isAuthenticated(player) {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Game not joined - User is not registered;>", message.Rid, actionJoinGame))
 		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
 		return errors.New("joinGame: User not registered")
 	}
@@ -232,7 +250,7 @@ func JoinGameAction(manager *Manager, message *communication.Message) error {
 		return errors.New("joinGame: Game ID is not number")
 	}
 
-	// Assing player to game as Player1
+	// Assign player to game as Player1
 	if game.Player1 == nil {
 		game.Player1 = player
 		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:ok;msg:Game #%d joined as Player #1;player:1;>", message.Rid, actionJoinGame, game.UID))
@@ -240,7 +258,7 @@ func JoinGameAction(manager *Manager, message *communication.Message) error {
 		return nil
 	}
 
-	// Assing player to game as Player2
+	// Assign player to game as Player2
 	if game.Player2 == nil {
 		game.Player2 = player
 		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:ok;msg:Game #%d joined as Player #2;player:2;>", message.Rid, actionJoinGame, game.UID))
@@ -253,7 +271,66 @@ func JoinGameAction(manager *Manager, message *communication.Message) error {
 	return errors.New("joinGame: Game is full")
 }
 
+// Function to get GameList
+func GetGamesListAction(manager *Manager, message *communication.Message) error {
+	if manager == nil {
+		return errors.New("createGame: manager cannot be nil")
+	}
 
+	if message == nil {
+		return errors.New("createGame: message cannot be nil")
+	}
+
+	player, errFindPlayer := GetPlayerByClientID(manager, message.Source)
+
+	if errFindPlayer != nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:ListGames - User does not exist;>", message.Rid, actionListGames))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("listGames: User does not exist")
+	}
+
+	// Check if player is registered
+	if !isAuthenticated(player) {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Cannot list games - User is not registered;>", message.Rid, actionListGames))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("listGames: User not registered")
+	}
+
+	// Create message base and format
+	gameCountFormat := "gameCount:%d;"
+	gameIDFormat := "gameID%d:%d;"
+
+	messageBase := fmt.Sprintf("<id:%d;rid:0;type:%d;|", message.Rid, actionListGames)
+
+	// Determine count of empty games
+	var empty int = 0
+	for _, game := range manager.GameServers {
+		if game.Player2 == nil || game.Player1 == nil {
+			empty++
+		}
+	}
+
+	// Build message
+	sendMessage := ""
+	sendMessage = sendMessage + messageBase
+	sendMessage = sendMessage + fmt.Sprintf(gameCountFormat, empty)
+
+	// Build game ids list
+	var id int = 0
+	for _, game := range manager.GameServers {
+		if game.Player2 == nil || game.Player1 == nil {
+			sendMessage = sendMessage + fmt.Sprintf(gameIDFormat, id, game.UID)
+			id++
+		}
+	}
+
+	// Add end of message
+	sendMessage = sendMessage + ">"
+
+	// Send message to client
+	_ = communication.SendID(manager.CommunicationServer, []byte(sendMessage), message.Source)
+	return nil
+}
 
 
 
