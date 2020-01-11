@@ -371,7 +371,6 @@ func GetGamesListAction(manager *Manager, message *communication.Message) error 
 			id++
 		}
 	}
-
 	// Add end of message
 	sendMessage = sendMessage + ">"
 
