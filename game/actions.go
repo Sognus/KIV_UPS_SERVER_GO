@@ -16,6 +16,7 @@ type Actions struct {
 
 // action IDs
 const (
+	actionDisconnect = 20
 	actionRegister = 1000
 	actionCreateGame = 2000
 	actionJoinGame = 2100
@@ -33,6 +34,7 @@ func InitializeActions(manager *Manager) error {
 	manager.ServerActions.global[actionCreateGame] = CreateGameAction
 	manager.ServerActions.global[actionJoinGame] = JoinGameAction
 	manager.ServerActions.global[actionListGames] = GetGamesListAction
+	manager.ServerActions.global[actionDisconnect] = DisconnectAction
 
 	return nil
 }
@@ -77,6 +79,52 @@ func ProcessMessage(manager *Manager, message *communication.Message) error {
 
 		return errors.New("unknown message")
 	}
+
+	return nil
+}
+
+// Function to permanently terminate Players account and close connection
+func DisconnectAction(manager *Manager, message *communication.Message) error {
+	if manager == nil {
+		return errors.New("disconnect: manager cannot be nil")
+	}
+
+	if message == nil {
+		return errors.New("disconnect: message cannot be nil")
+	}
+
+	playerIDValue, playerIDPresent := message.Content["playerID"]
+
+	if !playerIDPresent {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Account not terminated - playerID not provided;>", message.Rid, actionDisconnect))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("could not terminate users account: playerID not provided")
+	}
+
+	playerID, errParseInt :=  strconv.Atoi(playerIDValue)
+
+	if errParseInt != nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Account not terminated - playerID must be number;>", message.Rid, actionDisconnect))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("could not terminate users account: playerID is not number")
+	}
+
+	player, errFindPlayer := GetPlayerByID(manager, playerID)
+
+	if errFindPlayer != nil || player == nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Account not terminated - player does not exist;>", message.Rid, actionDisconnect))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+	}
+
+	// Terminate client
+	if player.client != nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:ok;msg:Account terminated;>", message.Rid, actionDisconnect))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		_ = communication.RemoveClient(manager.CommunicationServer, player.client.Socket)
+	}
+
+	_ = RemovePlayer(manager, player)
+	fmt.Printf("Player #%d: Account and connection terminated\n", playerID)
 
 	return nil
 }

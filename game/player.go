@@ -148,3 +148,31 @@ func GetPlayersGameByClientID(manager *Manager, clientID int) (*GameServer, erro
 
 	return game, nil
 }
+
+// Remove player without terminating client by players ID
+func RemovePlayerByID(manager *Manager, playerID int) error {
+	if manager == nil {
+		return errors.New("manager cannot be null")
+	}
+
+	player, errFindPlayer := GetPlayerByID(manager, playerID)
+
+	if errFindPlayer != nil {
+		return errors.New("player does not exist")
+	}
+
+	return RemovePlayer(manager, player)
+}
+// Remove player without removing client
+func RemovePlayer(manager *Manager, player *Player) error {
+	if manager == nil {
+		return errors.New("manager cannot be null")
+	}
+
+	if player == nil {
+		return errors.New("player cannot be null")
+	}
+
+	delete(manager.Players, player.ID)
+	return nil
+}
