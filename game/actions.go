@@ -16,12 +16,22 @@ type Actions struct {
 
 // action IDs
 const (
+	// Users request to disconnect
 	actionDisconnect = 20
+	// Users request to register playername
 	actionRegister = 1000
+	// Users keepAlive message
+	actionKeepAlive = 1100
+	// Users request to create game
 	actionCreateGame = 2000
+	// Users request to join game
 	actionJoinGame = 2100
+	// Users request to reconnect to existing game
 	actionReconnectGame = 2200
+	// Users request to list free games
 	actionListGames = 2300
+	// Users request to get current game status
+	actionStatusGame = 2400
 )
 
 // Initialize available actions
