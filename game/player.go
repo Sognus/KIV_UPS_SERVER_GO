@@ -8,10 +8,26 @@ import (
 )
 
 type Player struct {
+	// Players communication client
 	client *communication.Client
+	// Players ID
 	ID int
+	// Players name
 	userName string
+	// Unix time of players last message
 	lastCommunication int64
+
+	/* Game specific variables */
+	/* ####################### */
+
+	// x coordination of player center
+	x float64
+	// y coordianation of player center
+	y float64
+	// Player height
+	height float64
+	// Player width
+	width float64
 }
 
 

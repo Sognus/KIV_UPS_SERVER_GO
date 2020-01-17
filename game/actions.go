@@ -32,6 +32,9 @@ const (
 	actionListGames = 2300
 	// Users request to get current game status
 	actionStatusGame = 2400
+
+	// INGAME MESSAGES
+	actionPlayerPositionUpdate = 3000
 )
 
 // Initialize available actions
@@ -39,12 +42,15 @@ func InitializeActions(manager *Manager) error {
 	manager.ServerActions.global = make(map[int]Action)
 	manager.ServerActions.game = make(map[int]Action)
 
-	// RegisterAction messages
+	// Register global action messages
 	manager.ServerActions.global[actionRegister] = RegisterAction
 	manager.ServerActions.global[actionCreateGame] = CreateGameAction
 	manager.ServerActions.global[actionJoinGame] = JoinGameAction
 	manager.ServerActions.global[actionListGames] = GetGamesListAction
 	manager.ServerActions.global[actionDisconnect] = DisconnectAction
+
+	// Register game forward messages
+	manager.ServerActions.game[actionPlayerPositionUpdate] = nil
 
 	return nil
 }
@@ -74,21 +80,30 @@ func ProcessMessage(manager *Manager, message *communication.Message) error {
 
 	// Process global action
 	_, ok := manager.ServerActions.global[message.Msg]
+	_, okGame := manager.ServerActions.game[message.Msg]
 
 	if ok {
 		_ = manager.ServerActions.global[message.Msg](manager, message)
 	} else {
-		fmt.Printf("Client #%d: unknown message (type: %d)\n", message.Source, message.Msg)
-		msg := fmt.Sprintf("<id:%d;rid:0;type:10;|status:err;msg:uknown message;>", message.Rid)
-		client, errFind := communication.GetClientByID(manager.CommunicationServer, message.Source)
+		// Redirect action to game server
+		if okGame {
+			// Get game by message sender - check if it exist and player is in game
 
-		// SendSocket message to client if client exist
-		if errFind == nil {
-			_ = communication.SendSocket(manager.CommunicationServer, []byte(msg), client.Socket)
+		} else {
+			fmt.Printf("Client #%d: unknown message (type: %d)\n", message.Source, message.Msg)
+			msg := fmt.Sprintf("<id:%d;rid:0;type:10;|status:err;msg:uknown message;>", message.Rid)
+			client, errFind := communication.GetClientByID(manager.CommunicationServer, message.Source)
+
+			// SendSocket message to client if client exist
+			if errFind == nil {
+				_ = communication.SendSocket(manager.CommunicationServer, []byte(msg), client.Socket)
+			}
+
+			return errors.New("unknown message")
 		}
-
-		return errors.New("unknown message")
 	}
+
+
 
 	return nil
 }
@@ -124,6 +139,34 @@ func DisconnectAction(manager *Manager, message *communication.Message) error {
 	if errFindPlayer != nil || player == nil {
 		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Account not terminated - player does not exist;>", message.Rid, actionDisconnect))
 		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("unable to terminate players account")
+	}
+
+	// Terminate players game if hes alone in game
+	game, errGame := GetPlayersGame(manager, player)
+
+	// Game exist
+	if errGame == nil {
+		// Player is player 1
+		if game.Player1 != nil && game.Player1.ID == player.ID {
+			// Delete player from game
+			game.Player1 = nil
+			// Mark game as paused
+			game.Paused = true
+		}
+
+		// Player is player 2
+		if game.Player2 != nil && game.Player2.ID == player.ID {
+			// Delete player from game
+			game.Player2 = nil
+			// Mark game as paused
+			game.Paused = true
+		}
+
+		// Check if both players are gone, if so, stop game
+		if game.Player1 == nil && game.Player2 == nil {
+			_ = RemoveEmptyGame(manager, game)
+		}
 	}
 
 	// Terminate client
@@ -242,6 +285,9 @@ func CreateGameAction(manager *Manager, message *communication.Message) error {
 	gameCreated.Player1 = player
 	data := []byte(fmt.Sprintf("<id:%d;rid:0;type:2000;|status:ok;msg:Game created and joined;GameID:%d;>", message.Rid, gameCreated.UID))
 	_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+
+	// Start game
+	go GameStart(manager, gameCreated)
 
 	return nil
 }
