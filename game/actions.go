@@ -30,10 +30,12 @@ const (
 	actionReconnectGame = 2200
 	// Users request to list free games
 	actionListGames = 2300
-	// Users request to get current game status
-	actionStatusGame = 2400
+	// Player ask for current game state (server can send it by himself)
+	actionGameState = 2400
 
 	// INGAME MESSAGES
+
+	// Player enters his movement
 	actionPlayerPositionUpdate = 3000
 )
 
@@ -51,6 +53,7 @@ func InitializeActions(manager *Manager) error {
 
 	// Register game forward messages
 	manager.ServerActions.game[actionPlayerPositionUpdate] = nil
+	manager.ServerActions.game[actionGameState] = nil
 
 	return nil
 }
@@ -75,8 +78,8 @@ func ProcessMessage(manager *Manager, message *communication.Message) error {
 		}
 	}
 
+	// F golang
 	player = player
-
 
 	// Process global action
 	_, ok := manager.ServerActions.global[message.Msg]
@@ -87,7 +90,11 @@ func ProcessMessage(manager *Manager, message *communication.Message) error {
 	} else {
 		// Redirect action to game server
 		if okGame {
-			// Get game by message sender - check if it exist and player is in game
+			game, errGameMessageCheck := CheckGameAction(manager, message)
+
+			if errGameMessageCheck == nil {
+				game.Messages = append(game.Messages, message)
+			}
 
 		} else {
 			fmt.Printf("Client #%d: unknown message (type: %d)\n", message.Source, message.Msg)
@@ -180,6 +187,44 @@ func DisconnectAction(manager *Manager, message *communication.Message) error {
 	fmt.Printf("Player #%d: Account and connection terminated\n", playerID)
 
 	return nil
+}
+
+// Checks message for game before its redirected to game
+func CheckGameAction(manager *Manager, message *communication.Message) (*GameServer,error) {
+	if manager == nil {
+		return nil, errors.New("unable to check game message - manager cannot be nil")
+	}
+
+	if message == nil {
+		return nil, errors.New("unable to check game message - message cannot be nil")
+	}
+
+	// Check if player is registered
+	player, errFindPlayer := GetPlayerByClientID(manager, message.Source)
+
+	if errFindPlayer != nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:User does not exist;>", message.Rid, message.Msg))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return nil, errors.New("game message check: user does not exist")
+	}
+
+	if !isAuthenticated(player) {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:User is not registered;>", message.Rid, message.Msg))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return nil, errors.New("game message check: user is not registered")
+	}
+
+	// Check if player has game
+	game, errGameExist := GetPlayersGame(manager, player)
+
+	if errGameExist != nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:User does not have game;>", message.Rid, message.Msg))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return nil, errors.New("game message check: user does not have game")
+	}
+
+	// User is registed and in game
+	return game, nil
 }
 
 // Function to register player's account
