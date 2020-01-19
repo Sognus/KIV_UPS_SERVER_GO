@@ -4,6 +4,7 @@ import (
 	"../communication"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -45,10 +46,77 @@ type GameServer struct {
 	sentMessages int64
 }
 
+
+func GameUpdatePlayer(manager *Manager, server *GameServer, message *communication.Message) error {
+	if manager == nil {
+		return errors.New("unable parse players input: manager cannot be null")
+	}
+
+	if server == nil {
+		return errors.New("unable parse players input: game server cannot be null")
+	}
+
+	if message == nil {
+		return errors.New("unable parse players input: message cannot be null")
+	}
+
+	// Check message type
+	if message.Msg != 3000 {
+		return errors.New("unable to pause players input: wrong message type")
+	}
+
+	playerIDValue, playerIDPresent := message.Content["playerID"]
+
+	if !playerIDPresent {
+		return errors.New("unable to process players input: player ID is missing")
+	}
+
+	playerIDValueInt, errConvID := strconv.Atoi(playerIDValue)
+
+	if errConvID != nil {
+		return errors.New("unable to process players input: player ID is not number")
+	}
+
+	playerXValue, playerXPresent := message.Content["x"]
+
+	if !playerXPresent {
+		return errors.New("unable to process players input: player.x is missing")
+	}
+
+	playerXValueFloat, errConvX := strconv.ParseFloat(playerXValue, 64)
+
+	if errConvX != nil {
+		return errors.New("unable to process players input: player.x is not number")
+	}
+
+	playerYValue, PlayerYPresent := message.Content["y"]
+
+	if !PlayerYPresent {
+		return errors.New("unable to process players input: player.y is missing")
+	}
+
+	playerYValueFloat, errConvY := strconv.ParseFloat(playerYValue, 64)
+	playerYValueFloat = playerYValueFloat
+
+	if errConvY != nil {
+		return errors.New("unable to process players input: player.y is not number")
+	}
+
+	// TODO:
+	// 	Maybe implement pause for player not just for server
+
+	if server.Player1 != nil && server.Player1.ID == playerIDValueInt {
+		server.Player1.x = playerXValueFloat
+	}
+
+	if server.Player2 != nil && server.Player2.ID == playerIDValueInt {
+		server.Player2.x = playerXValueFloat
+	}
+
+	return nil
+}
+
 func GameStart(manager *Manager, game *GameServer) {
-
-	// Initialize game actions
-
 
 	// Initialize ball
 	ball := Ball{
@@ -58,7 +126,23 @@ func GameStart(manager *Manager, game *GameServer) {
 		Speed:    5,
 		MaxSpeed: 20,
 	}
+
+
+	// Initialize ball
 	game.Ball = &ball
+
+	// Initialize players position
+	if game.Player1 != nil {
+		game.Player1.y = float64(0 + game.PLAYER_GAP)
+		game.Player1.x = float64(game.WIDTH / 2)
+		game.Player1.width = 80
+	}
+
+	if game.Player2 != nil {
+		game.Player2.y = float64(game.HEIGHT - game.PLAYER_GAP)
+		game.Player2.x = float64(game.WIDTH / 2)
+		game.Player2.width = 80
+	}
 
 	// Setup game tick
 	game.Start = time.Now()
@@ -71,13 +155,30 @@ func GameStart(manager *Manager, game *GameServer) {
 		// If enough time passed from last tick we can do next tick
 		for time.Since(game.Start).Milliseconds() >  nextGameTickTime {
 			// Process messages from players, update their position, pause status
-			// TODO: implement
+			if len(game.Messages) > 0 {
+				message := game.Messages[0]
+				game.Messages = game.Messages[1:]
+
+				if message.Msg == 3000 {
+					_ = GameUpdatePlayer(manager, game, message)
+				}
+			}
+
+			// Enforce correct y level
+			if game.Player1 != nil {
+				game.Player1.y = float64(0 + game.PLAYER_GAP)
+			}
+
+			if game.Player2 != nil {
+				game.Player2.y = float64(game.HEIGHT - game.PLAYER_GAP)
+			}
 
 			// Update coordinations of ball
 			_ = UpdateBall(game)
 
 			// Send current state of game to both players
 			gameStateMessage, errGameState := BuildGameStateMessage(game)
+			fmt.Printf("%v: %v\n", time.Now(), gameStateMessage)
 			// To player 1
 			if errGameState == nil && game.Player1 != nil && game.Player1.client != nil {
 				_ = communication.SendID(manager.CommunicationServer, []byte(gameStateMessage), game.Player1.client.UID)
@@ -121,7 +222,7 @@ func BuildGameStateMessage(game *GameServer) (string, error) {
 
 	// Add player 2 coordinations
 	player2x := int(game.WIDTH / 2)
-	player2y := int(0 + game.PLAYER_GAP)
+	player2y := int(game.HEIGHT - game.PLAYER_GAP)
 	if game.Player2 != nil {
 		player2x = int(game.Player2.x)
 		player2y = int(game.Player2.y)

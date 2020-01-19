@@ -33,6 +33,7 @@ const (
 	// Player ask for current game state (server can send it by himself)
 	actionGameState = 2400
 
+	// ######################################################################
 	// INGAME MESSAGES
 
 	// Player enters his movement

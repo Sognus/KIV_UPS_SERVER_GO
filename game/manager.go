@@ -56,7 +56,7 @@ func ManagerStart(communicationServer *communication.Server, manager *Manager) {
 
 	for {
 		message := <-communicationServer.MessageChannel
-		fmt.Printf("Message: %v\n", message)
+		//fmt.Printf("Message: %v\n", message)
 		_ = ProcessMessage(manager, &message)
 	}
 }

@@ -2,8 +2,8 @@ package game
 
 import (
 	"errors"
-	"fmt"
 	"math"
+	"math/rand"
 )
 
 type Ball struct {
@@ -22,36 +22,85 @@ func UpdateBall(server *GameServer) error {
 	if server.Ball == nil {
 		return errors.New("unable to update ball - ball cannot be null")
 	}
-	ball := server.Ball
-	radians := float64(ball.Rotation) * (math.Pi / 180)
+	radians := float64(server.Ball.Rotation) * (math.Pi / 180)
 	velocity_x := math.Cos(radians)
 	velocity_y := math.Sin(radians)
 
-	ball.X += velocity_x * float64(ball.Speed)
-	ball.Y += velocity_y * float64(ball.Speed)
+	server.Ball.X += velocity_x * float64(server.Ball.Speed)
+	server.Ball.Y += velocity_y * float64(server.Ball.Speed)
 
 	// Bounce right wall
-	if ball.X >= float64(server.WIDTH) {
-		ball.Rotation = int(math.Mod(float64(180 - ball.Rotation), 360))
+	if server.Ball.X >= float64(server.WIDTH) {
+		server.Ball.Rotation = int(math.Mod(float64(180 - server.Ball.Rotation), 360))
 	}
 
 	// Bounce left wall
-	if ball.X <= float64(0) {
-		ball.Rotation = int(math.Mod(float64(180 - ball.Rotation), 360))
+	if server.Ball.X <= float64(0) {
+		server.Ball.Rotation = int(math.Mod(float64(180 - server.Ball.Rotation), 360))
 	}
 
 	// Bounce top wall
-	if ball.Y <= float64(0) {
-		ball.Rotation = int(math.Mod(float64(360 - ball.Rotation), 360))
+	if server.Player1 != nil {
+		if server.Ball.Y <= server.Player1.y && server.Ball.X >= server.Player1.x + float64(server.PLAYER_SIZE_WIDTH / 2) && server.Ball.X <= server.Player1.x - float64(server.PLAYER_SIZE_WIDTH / 2) {
+			server.Ball.Rotation = int(math.Mod(float64(360 - server.Ball.Rotation), 360))
+			server.Ball.Speed += 1
+			if server.Ball.Speed >= server.Ball.MaxSpeed {
+				server.Ball.Speed = server.Ball.MaxSpeed
+			}
+		}
+	} else {
+		// There is no player - bounce by wall
+		if server.Ball.Y <= float64(0) {
+			server.Ball.Rotation = int(math.Mod(float64(360 - server.Ball.Rotation), 360))
+		}
 	}
 
 	// Bounce bottom wall
-	if ball.Y >= float64(server.HEIGHT) {
-		ball.Rotation = int(math.Mod(float64(360 - ball.Rotation), 360))
+	if server.Ball.Y >= float64(server.HEIGHT) {
+		server.Ball.Rotation = int(math.Mod(float64(360 - server.Ball.Rotation), 360))
 	}
 
-	fmt.Printf("new coords: %f, %f, rotation: %d\n", ball.X, ball.Y, ball.Rotation)
+	// Check if ball is out of bounds
+	if server.Ball.Y <= -25 {
+		// Reset ball
+		server.Ball.X = float64(server.WIDTH / 2)
+		server.Ball.Y = float64(server.HEIGHT /2)
 
+		randMax := 359
+		randMin := 0
+
+		// Generate new random rotation while we get cardinal directions
+		for server.Ball.Rotation == 0 || server.Ball.Rotation == 90 || server.Ball.Rotation == 180 || server.Ball.Rotation == 270 {
+			server.Ball.Rotation = rand.Intn((randMax - randMin) + randMin)
+		}
+
+		// Add score to player2
+		server.Score2++
+
+		// Reset ball speed
+		server.Ball.Speed = 3
+	}
+
+	// Check if ball is out of bounds
+	if server.Ball.Y >= float64(server.HEIGHT) + 25 {
+		// Reset ball
+		server.Ball.X = float64(server.WIDTH / 2)
+		server.Ball.Y = float64(server.HEIGHT /2)
+
+		randMax := 359
+		randMin := 0
+
+		// Generate new random rotation while we get cardinal directions
+		for server.Ball.Rotation == 0 || server.Ball.Rotation == 90 || server.Ball.Rotation == 180 || server.Ball.Rotation == 270 {
+			server.Ball.Rotation = rand.Intn((randMax - randMin) + randMin)
+		}
+
+		// Add score to player2
+		server.Score1++
+
+		// Reset ball speed
+		server.Ball.Speed = 3
+	}
 
 	return nil
 }
