@@ -30,33 +30,27 @@ func UpdateBall(server *GameServer) error {
 	ball.X += velocity_x * float64(ball.Speed)
 	ball.Y += velocity_y * float64(ball.Speed)
 
-	fmt.Printf("new coords: %f, %f\n", ball.X, ball.Y)
-
+	// Bounce right wall
 	if ball.X >= float64(server.WIDTH) {
-		// Bounce by right wall
-		if ball.Rotation > 0 && ball.Rotation < 90 {
-			// Right bounce down
-			ball.Rotation = 90 + ball.Rotation
-		}
-
-		if ball.Rotation > 270 && ball.Rotation <= 359 {
-			// Right bounce up
-			ball.Rotation = 270 - (ball.Rotation - 270)
-		}
+		ball.Rotation = int(math.Mod(float64(180 - ball.Rotation), 360))
 	}
 
+	// Bounce left wall
 	if ball.X <= float64(0) {
-		// Bounce by left wall
-		if ball.Rotation > 90 && ball.Rotation < 180 {
-			// Left bounce down
-			ball.Rotation = 90 - (ball.Rotation - 90)
-		}
-
-		if ball.Rotation > 180 && ball.Rotation < 270 {
-			// Left bounce up
-			ball.Rotation = 270 + (ball.Rotation - 180)
-		}
+		ball.Rotation = int(math.Mod(float64(180 - ball.Rotation), 360))
 	}
+
+	// Bounce top wall
+	if ball.Y <= float64(0) {
+		ball.Rotation = int(math.Mod(float64(360 - ball.Rotation), 360))
+	}
+
+	// Bounce bottom wall
+	if ball.Y >= float64(server.HEIGHT) {
+		ball.Rotation = int(math.Mod(float64(360 - ball.Rotation), 360))
+	}
+
+	fmt.Printf("new coords: %f, %f, rotation: %d\n", ball.X, ball.Y, ball.Rotation)
 
 
 	return nil
