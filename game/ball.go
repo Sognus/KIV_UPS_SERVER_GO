@@ -41,7 +41,7 @@ func UpdateBall(server *GameServer) error {
 
 	// Bounce top wall
 	if server.Player1 != nil {
-		if server.Ball.Y <= server.Player1.y && server.Ball.X >= server.Player1.x + float64(server.PLAYER_SIZE_WIDTH / 2) && server.Ball.X <= server.Player1.x - float64(server.PLAYER_SIZE_WIDTH / 2) {
+		if server.Ball.Y <= server.Player1.y + 5 && server.Ball.X >= server.Player1.x - 40 && server.Ball.X <= server.Player1.x + 40 {
 			server.Ball.Rotation = int(math.Mod(float64(360 - server.Ball.Rotation), 360))
 			server.Ball.Speed += 1
 			if server.Ball.Speed >= server.Ball.MaxSpeed {
