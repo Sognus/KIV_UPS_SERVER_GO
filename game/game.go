@@ -106,10 +106,12 @@ func GameUpdatePlayer(manager *Manager, server *GameServer, message *communicati
 	// 	Maybe implement pause for player not just for server
 
 	if server.Player1 != nil && server.Player1.ID == playerIDValueInt {
+		print("player1 set x\n")
 		server.Player1.x = playerXValueFloat
 	}
 
 	if server.Player2 != nil && server.Player2.ID == playerIDValueInt {
+		print("player2 set x\n")
 		server.Player2.x = playerXValueFloat
 	}
 
@@ -125,6 +127,7 @@ func GameStart(manager *Manager, game *GameServer) {
 		Rotation: 45,
 		Speed:    5,
 		MaxSpeed: 20,
+		Size: 10,
 	}
 
 
@@ -155,7 +158,7 @@ func GameStart(manager *Manager, game *GameServer) {
 		// If enough time passed from last tick we can do next tick
 		for time.Since(game.Start).Milliseconds() >  nextGameTickTime {
 			// Process messages from players, update their position, pause status
-			if len(game.Messages) > 0 {
+			for len(game.Messages) > 0 {
 				message := game.Messages[0]
 				game.Messages = game.Messages[1:]
 
@@ -178,7 +181,7 @@ func GameStart(manager *Manager, game *GameServer) {
 
 			// Send current state of game to both players
 			gameStateMessage, errGameState := BuildGameStateMessage(game)
-			fmt.Printf("%v: %v\n", time.Now(), gameStateMessage)
+			//fmt.Printf("%v: %v\n", time.Now(), gameStateMessage)
 			// To player 1
 			if errGameState == nil && game.Player1 != nil && game.Player1.client != nil {
 				_ = communication.SendID(manager.CommunicationServer, []byte(gameStateMessage), game.Player1.client.UID)

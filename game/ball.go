@@ -12,6 +12,7 @@ type Ball struct {
 	Rotation int 	// Degrees of rotation 0-359
 	Speed int		// Speed of ball in pixels per Tick
 	MaxSpeed int	// Maximum speed of ball in pixels per tick
+	Size int		// Ball diameter (circle diameter)
 }
 
 func UpdateBall(server *GameServer) error {
@@ -41,7 +42,7 @@ func UpdateBall(server *GameServer) error {
 
 	// Bounce top wall
 	if server.Player1 != nil {
-		if server.Ball.Y <= server.Player1.y + 5 && server.Ball.X >= server.Player1.x - 40 && server.Ball.X <= server.Player1.x + 40 {
+		if server.Ball.Rotation > 180 && server.Ball.Rotation <= 359 && server.Ball.Y <= server.Player1.y + float64(server.Ball.Size) && server.Ball.Y >= server.Player1.y - float64(server.Ball.Size / 2) && server.Ball.X >= server.Player1.x - server.Player1.width / 2 && server.Ball.X <= server.Player1.x + server.Player1.width / 2 {
 			server.Ball.Rotation = int(math.Mod(float64(360 - server.Ball.Rotation), 360))
 			server.Ball.Speed += 1
 			if server.Ball.Speed >= server.Ball.MaxSpeed {
@@ -61,7 +62,7 @@ func UpdateBall(server *GameServer) error {
 	}
 
 	// Check if ball is out of bounds
-	if server.Ball.Y <= -25 {
+	if server.Ball.Y <= -10 {
 		// Reset ball
 		server.Ball.X = float64(server.WIDTH / 2)
 		server.Ball.Y = float64(server.HEIGHT /2)
@@ -82,7 +83,7 @@ func UpdateBall(server *GameServer) error {
 	}
 
 	// Check if ball is out of bounds
-	if server.Ball.Y >= float64(server.HEIGHT) + 25 {
+	if server.Ball.Y >= float64(server.HEIGHT) + 10 {
 		// Reset ball
 		server.Ball.X = float64(server.WIDTH / 2)
 		server.Ball.Y = float64(server.HEIGHT /2)
