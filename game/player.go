@@ -165,6 +165,14 @@ func GetPlayersGameByClientID(manager *Manager, clientID int) (*GameServer, erro
 	return game, nil
 }
 
+func IsAlive(player *Player) bool {
+	if player == nil {
+		return false
+	}
+
+	return time.Now().Unix() - player.lastCommunication < 2.0
+}
+
 // Remove player without terminating client by players ID
 func RemovePlayerByID(manager *Manager, playerID int) error {
 	if manager == nil {

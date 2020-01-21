@@ -106,12 +106,10 @@ func GameUpdatePlayer(manager *Manager, server *GameServer, message *communicati
 	// 	Maybe implement pause for player not just for server
 
 	if server.Player1 != nil && server.Player1.ID == playerIDValueInt {
-		print("player1 set x\n")
 		server.Player1.x = playerXValueFloat
 	}
 
 	if server.Player2 != nil && server.Player2.ID == playerIDValueInt {
-		print("player2 set x\n")
 		server.Player2.x = playerXValueFloat
 	}
 
@@ -125,8 +123,8 @@ func GameStart(manager *Manager, game *GameServer) {
 		X:        float64(game.WIDTH / 2),
 		Y:        float64(game.HEIGHT / 2),
 		Rotation: 45,
-		Speed:    5,
-		MaxSpeed: 20,
+		Speed:    3,
+		MaxSpeed: 15,
 		Size: 10,
 	}
 
@@ -148,6 +146,7 @@ func GameStart(manager *Manager, game *GameServer) {
 	}
 
 	// Setup game tick
+	game.Paused = false
 	game.Start = time.Now()
 	game.TickDuration = int64(1000 / game.Tps)
 
@@ -155,6 +154,20 @@ func GameStart(manager *Manager, game *GameServer) {
 
 	// Start game loop
 	for game.Running {
+		// If both players are not null and okay with keepalive unpause game
+		if game.Player1 != nil && game.Player2 != nil && IsAlive(game.Player1) && IsAlive(game.Player2) {
+			// TODO: implement keep alive
+			if game.Paused {
+				fmt.Printf("game #%d unpaused\n", game.UID)
+				game.Paused = false
+			}
+		} else {
+			if !game.Paused {
+				fmt.Printf("game #%d paused\n", game.UID)
+				game.Paused = true
+			}
+		}
+
 		// If enough time passed from last tick we can do next tick
 		for time.Since(game.Start).Milliseconds() >  nextGameTickTime {
 			// Process messages from players, update their position, pause status
@@ -177,11 +190,13 @@ func GameStart(manager *Manager, game *GameServer) {
 			}
 
 			// Update coordinations of ball
-			_ = UpdateBall(game)
+			if !game.Paused {
+				_ = UpdateBall(game)
+			}
 
 			// Send current state of game to both players
 			gameStateMessage, errGameState := BuildGameStateMessage(game)
-			//fmt.Printf("%v: %v\n", time.Now(), gameStateMessage)
+
 			// To player 1
 			if errGameState == nil && game.Player1 != nil && game.Player1.client != nil {
 				_ = communication.SendID(manager.CommunicationServer, []byte(gameStateMessage), game.Player1.client.UID)

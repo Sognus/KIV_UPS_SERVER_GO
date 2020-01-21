@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -85,13 +86,14 @@ func Start(serverContext *Server) {
 				reader, writer := io.Pipe()
 
 				newClient := &Client{
-					UID: serverContext.NextClientID,
-					Socket:  newSocketDescriptor,
-					ip:      ipv4,
-					port:    port,
-					address: newAddress,
-					Reader:  reader,
-					writer:  writer,
+					UID:               serverContext.NextClientID,
+					Socket:            newSocketDescriptor,
+					ip:                ipv4,
+					port:              port,
+					address:           newAddress,
+					LastCommunication: time.Now().Unix(),
+					Reader:            reader,
+					writer:            writer,
 				}
 
 				// Increment UID

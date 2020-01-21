@@ -13,6 +13,8 @@ type Client struct {
 	ip string
 	// TCP port
 	port int
+	// Last communication
+	LastCommunication int64
 	// Raw Socket address
 	address syscall.Sockaddr
 	// Clients Reader and Writer

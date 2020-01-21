@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 type Action func(*Manager, *communication.Message) error
@@ -32,6 +33,8 @@ const (
 	actionListGames = 2300
 	// Player ask for current game state (server can send it by himself)
 	actionGameState = 2400
+	// Player demands game abandon
+	actionGameAbandon = 2500
 
 	// ######################################################################
 	// INGAME MESSAGES
@@ -51,6 +54,8 @@ func InitializeActions(manager *Manager) error {
 	manager.ServerActions.global[actionJoinGame] = JoinGameAction
 	manager.ServerActions.global[actionListGames] = GetGamesListAction
 	manager.ServerActions.global[actionDisconnect] = DisconnectAction
+	manager.ServerActions.global[actionGameAbandon] = AbandonAction
+	manager.ServerActions.global[actionKeepAlive] = KeepAliveAction
 
 	// Register game forward messages
 	manager.ServerActions.game[actionPlayerPositionUpdate] = nil
@@ -112,6 +117,118 @@ func ProcessMessage(manager *Manager, message *communication.Message) error {
 	}
 
 
+
+	return nil
+}
+
+// Function to permanently leave game
+func KeepAliveAction(manager *Manager, message *communication.Message) error {
+	if manager == nil {
+		return errors.New("abandon: manager cannot be nil")
+	}
+
+	if message == nil {
+		return errors.New("abandon: message cannot be nil")
+	}
+
+	// Just send pong asap
+	data := []byte(fmt.Sprintf("<id:0;rid:0;type:%d;|status:ok;>", actionKeepAlive))
+	_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+
+	// Update keepalive
+	client, clientErr := communication.GetClientByID(manager.CommunicationServer, message.Source)
+
+	if clientErr != nil {
+		return errors.New("keepalive: cant find client")
+	}
+
+	// For client
+	client.LastCommunication = time.Now().Unix()
+
+	// For player
+	player, playerErr := GetPlayerByClientID(manager, message.Source)
+
+	if playerErr != nil {
+		return errors.New("keep alive: cant find player")
+	}
+
+	player.lastCommunication = time.Now().Unix()
+
+	return nil
+}
+
+// Function to permanently leave game
+func AbandonAction(manager *Manager, message *communication.Message) error {
+	if manager == nil {
+		return errors.New("abandon: manager cannot be nil")
+	}
+
+	if message == nil {
+		return errors.New("abandon: message cannot be nil")
+	}
+
+	playerIDValue, playerIDPresent := message.Content["playerID"]
+
+	if !playerIDPresent {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Cannot abandon game - message incomplete - playerID;>", message.Rid,  actionGameAbandon))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("cannot abandon game: playerID not provided")
+	}
+
+	playerID, errParseInt :=  strconv.Atoi(playerIDValue)
+
+	if errParseInt != nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Cannot abandon game - playerID must be number;>", message.Rid,  actionGameAbandon))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("cannot abandon game: playerID is not number")
+	}
+
+	player, errFindPlayer := GetPlayerByID(manager, playerID)
+
+	if errFindPlayer != nil || player == nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Cannot abandon game - player does not exist;>", message.Rid, actionGameAbandon))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("cannot abandon game: player does not exist")
+	}
+
+	if !isAuthenticated(player) {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Cannot abandon game - player is not registered;>", message.Rid, actionGameAbandon))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("cannot abandon game: player is not registered")
+	}
+
+	game, errGame := GetPlayersGame(manager, player)
+
+	if errGame != nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Cannot abandon game - %s;>", message.Rid, actionGameAbandon, errGame.Error()))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("cannot abandon game: game find error")
+	}
+
+	if game == nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Cannot abandon game - game not found;>", message.Rid, actionGameAbandon))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("cannot abandon game: no game found")
+	}
+
+	if game.Player1 != nil && game.Player1.ID == player.ID {
+		game.Player1 = nil
+		game.Paused = true
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:ok;msg:Game abandoned;>", message.Rid, actionGameAbandon))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+	}
+
+	if game.Player2 != nil && game.Player2.ID == player.ID {
+		game.Player2 = nil
+		game.Paused = true
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:ok;msg:Game abandoned;>", message.Rid, actionGameAbandon))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+	}
+
+	// Check if both players are gone, if so, stop game
+	if game.Player1 == nil && game.Player2 == nil {
+		_ = RemoveEmptyGame(manager, game)
+	}
 
 	return nil
 }
