@@ -206,6 +206,21 @@ func GameStart(manager *Manager, game *GameServer) {
 				_ = communication.SendID(manager.CommunicationServer, []byte(gameStateMessage), game.Player2.client.UID)
 			}
 
+			// Build game end message
+			gameEndMessage, endErr := BuildGameEndMessage(game)
+			if endErr == nil {
+				if game.Player1 != nil {
+					_ = communication.SendID(manager.CommunicationServer, []byte(gameEndMessage), game.Player1.client.UID)
+				}
+
+				if game.Player2 != nil {
+					_ = communication.SendID(manager.CommunicationServer, []byte(gameEndMessage), game.Player2.client.UID)
+				}
+
+				// Stop game
+				game.Running = false
+			}
+
 
 
 			// Determine next game tick time
@@ -215,7 +230,31 @@ func GameStart(manager *Manager, game *GameServer) {
 	}
 
 	// After end of game send message to players game was completed and delete game
-	// TODO: implement
+	delete(manager.GameServers, game.UID)
+}
+
+// Builds game end message
+func BuildGameEndMessage(game *GameServer) (string, error) {
+	if game == nil {
+		return "", errors.New("cannot build game end message: game cannot be null")
+	}
+
+	if game.Score1 < 10 && game.Score2 < 10 {
+		return "", errors.New("not enough score")
+	}
+
+	// Start message with message header
+	msg := fmt.Sprintf("<id:%d;rid:0;type:3100;|status:ok;", game.sentMessages)
+
+	if game.Score1 >= 10 {
+		msg += "msg:Player1 won!;>"
+	}
+
+	if game.Score2 >= 10 {
+		msg += "msg:Player2 won!;>"
+	}
+
+	return msg, nil
 }
 
 // Builds game state message from data

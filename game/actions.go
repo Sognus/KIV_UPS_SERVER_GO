@@ -41,6 +41,8 @@ const (
 
 	// Player enters his movement
 	actionPlayerPositionUpdate = 3000
+	// Game ends
+	actionGameEnd = 3100
 )
 
 // Initialize available actions
@@ -56,6 +58,7 @@ func InitializeActions(manager *Manager) error {
 	manager.ServerActions.global[actionDisconnect] = DisconnectAction
 	manager.ServerActions.global[actionGameAbandon] = AbandonAction
 	manager.ServerActions.global[actionKeepAlive] = KeepAliveAction
+	manager.ServerActions.global[actionReconnectGame] = ReconnectAction
 
 	// Register game forward messages
 	manager.ServerActions.game[actionPlayerPositionUpdate] = nil
@@ -117,6 +120,80 @@ func ProcessMessage(manager *Manager, message *communication.Message) error {
 	}
 
 
+
+	return nil
+}
+
+// Function to reconnect player
+func ReconnectAction(manager *Manager, message *communication.Message) error {
+	if manager == nil {
+		return errors.New("reconnect: manager cannot be nil")
+	}
+
+	if message == nil {
+		return errors.New("reconnect: message cannot be nil")
+	}
+
+	playerNameValue, playerNamePresent := message.Content["username"]
+
+	if !playerNamePresent {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Reconnect - message incomplete - missing username;>", message.Rid,  actionReconnectGame))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("reconnect: imcomplete message - missing username")
+	}
+
+	// Get current client and update
+	client, errClient := communication.GetClientByID(manager.CommunicationServer, message.Source)
+
+	if errClient != nil || client == nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Reconnect - TCP client error;>", message.Rid,  actionReconnectGame))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("reconnect: tcp client error")
+	}
+
+	var player *Player = nil
+	for _, pl := range manager.Players {
+		if pl.userName == playerNameValue {
+			player = pl
+			// Add new TCP client to player
+			player.client = client
+			break
+		}
+	}
+
+	println("Player found, fetching info")
+
+	// Player with such name was not found
+	if player == nil {
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:error;msg:Reconnect - user does not exist;>", message.Rid,  actionReconnectGame))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+		return errors.New("reconnect: player does not exist")
+	}
+
+	// Check if player has game
+	game, errGame := GetPlayersGameByClientID(manager, player.client.UID)
+
+	if game == nil || errGame != nil {
+		// Player does not have game
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:ok;playerID:%d;gameID:-1;>", message.Rid,  actionReconnectGame, player.ID))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+	} else {
+		// Player has game
+		playAs := "3"
+
+		// Determine who player is playing as
+		if game.Player1.ID == player.ID {
+			playAs = "1"
+		}
+
+		if game.Player2.ID == player.ID {
+			playAs = "2"
+		}
+
+		// Send info
+		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:ok;playerID:%d;gameID:%d;playas:%s;>", message.Rid,  actionReconnectGame, player.ID, game.UID, playAs))
+		_ = communication.SendID(manager.CommunicationServer, data, message.Source)
+	}
 
 	return nil
 }
