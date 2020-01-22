@@ -102,8 +102,6 @@ func GameUpdatePlayer(manager *Manager, server *GameServer, message *communicati
 		return errors.New("unable to process players input: player.y is not number")
 	}
 
-	// TODO:
-	// 	Maybe implement pause for player not just for server
 
 	if server.Player1 != nil && server.Player1.ID == playerIDValueInt {
 		server.Player1.x = playerXValueFloat
@@ -156,7 +154,6 @@ func GameStart(manager *Manager, game *GameServer) {
 	for game.Running {
 		// If both players are not null and okay with keepalive unpause game
 		if game.Player1 != nil && game.Player2 != nil && IsAlive(game.Player1) && IsAlive(game.Player2) {
-			// TODO: implement keep alive
 			if game.Paused {
 				fmt.Printf("game #%d unpaused\n", game.UID)
 				game.Paused = false

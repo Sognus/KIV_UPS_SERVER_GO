@@ -152,11 +152,14 @@ func ReconnectAction(manager *Manager, message *communication.Message) error {
 	}
 
 	var player *Player = nil
-	for _, pl := range manager.Players {
+	for update, pl := range manager.Players {
 		if pl.userName == playerNameValue {
 			player = pl
 			// Add new TCP client to player
 			player.client = client
+			player.userName = playerNameValue
+			// Update player
+			manager.Players[update] = player
 			break
 		}
 	}
