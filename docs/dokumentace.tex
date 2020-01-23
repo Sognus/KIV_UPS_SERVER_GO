@@ -1,0 +1,542 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage{comment}
+\usepackage{lmodern}
+\usepackage[inline]{enumitem}
+\usepackage{xcolor}
+\usepackage{blindtext}
+\usepackage{scrextend}
+\usepackage{cmap}
+\usepackage[czech]{babel}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage[capposition=bottom]{floatrow}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{pdfpages}
+\usepackage{hyperref}
+\begin{document}
+
+% Pouze informace
+\graphicspath{ {img/} }
+
+% Úvodní stránka
+\thispagestyle{empty}
+\begin{center}
+\begin{minipage}{0.75\linewidth}
+    \centering
+%University logo
+    \vspace{3cm}
+    \includegraphics[width=0.75\linewidth]{fav-logo.pdf}\\
+    \vspace{0.5cm}
+%Thesis title
+    {\uppercase{\Large KIV/UPS \\ \textbf{Online hra - Pong!}\par}}
+    \vspace{3cm}
+%Author's name
+    {\Large Jakub Vítek (viteja) - A19B0222P\par}
+    \vspace{2cm}
+%Degree
+    \vspace{1cm}
+%Date
+    {\Large Leden 2020}
+\end{minipage}
+\end{center}
+\clearpage
+\newpage
+
+% Část obsahu dokumentu
+\tableofcontents
+\newpage
+
+\section{Hra}
+\paragraph{}
+Původní Pong byla jedna z nejstarších her. Jednalo se o tenisovou 2D hru, která byla původně vydána společností
+Atari v roce 1972.
+
+\paragraph{}
+Hratelnost této hry je velice jednoduchá. Dva hráči na opačných stranách ovládají plošiny, kterými odráží míček. Ve
+chvíli kdy jednomu z hráčů propadne míček, druhý hráč získává bod. Míček se odraží od stěn a od plošin hráčů, v
+případě odražení od hráčské plošiny je míček navíc mírně zrychlen.
+
+
+\newpage
+\section{Implementace}
+\subsection{Server}
+\paragraph{}
+Serverová část byla implementována v jazyku go od společnosti Google. Důvodem pro výběr tohoto jazyka bylo dynamické
+typování, automatická správa paměti, pohodlnější práce s řetězcem než v jazyce C a jednoduchost paralelizace.
+
+\subsubsection{Komunikace}
+\paragraph{}
+Komunikace serveru je řešena samostatným vláknem, které řeší základní tvorbu socketů a čtení dat z nich. Server
+využívá hlavního socketu pro připojení nových klientů. Při připojení nového klienta se vždy vytvoří nový socket, přes
+který je s klientem komunikováno.
+
+\paragraph{}
+Komunikace s vícero sockety v jednom vlákně je řešena systémovým voláním operačního systému GNU/Linux \textit{select},
+ktere naplní předpřipravenou sadu socketů informací o tom, zda některý ze socketů komunikuje. Následně jsou všechny
+komunikující sockety postupně obslouženy. Při vytvoření nového spojení (socketu) se na serveru vytvoří a uloží do mapy
+struktura \textit{Client}, tato struktura také obsahuje buffer přijatých dat. Obsluhou klientského socketu je pak
+myšleno přečtení příchozích dat a jejich uložení do toho bufferu.
+
+\paragraph{}
+Pro každý vytvořený klient je spuštěn dekodér (jehož funkce je popsána v sekci protokol) jehož prací je čtení dat
+uložených v bufferu a jejich překlad na zprávy a jejich uložení do bufferu pro zprávy.
+
+\subsubsection{Zprávy a akce}
+\paragraph{}
+Při startu server se vytváří \textit{Manager}, jehož běh probíhá v samostatném vlákně. Při inicializaci této
+struktury se registrují akce do mapy akcí, kde klíčem je typ zprávy a hodnotou odkaz na funkci, která má být spuštěna
+při přijetí tohoto typu zprávy. Typ zprávy je možné přečíst z hlavičky zprávy. Ve chvíli, kdy zpráva na serveru
+existuje, je již ověřeno, že má validní hlavičku a formát, neověřuje se však její obsah.
+
+\paragraph{}
+Na serveru jsou zprávy dvojího typu, zprávy herní a kontrolním. Kontrolní zprávy obvykle řeší akce jako například
+registraci či jinou správu uživatele či hry (třeba její založení či opuštění). U herních zpráv je ověřeno, zda je
+uživatel registrován a splňuje všechny požadavky na přesun zprávy do bufferu herního serveru. V případě, že zpráva
+požadavky nesplňuje, je vrácena uživateli chybová správa se stejným typem.
+
+\subsubsection{Herní server}
+\paragraph{}
+Herní server je běžící smyčkou ve samostatném vlákně. Běžící server může být ve stavu \textit{PAUSED} či
+\textit{UNPAUSED}. Uživatel není schopný pauzu sám o sobě vyvolat. Server je ve stavu pauzy v případě, že je ve hře
+připojen jeden hráč či jeden z hráčů ztratil spojení.
+
+\paragraph{}
+Smyčka herního serveru proběhne třicetkrát za sekundu. Nejprve se ověřuje, zda jsou všichni uživatelé připojení a
+nemají ztracené spojení - ztráta spojení je detekována jako prodleva větší jak 2 vteřiny od poslední zprávy. Následně
+jsou přijaty všechny uživatelské zprávy změny hráčské pozice. U těchto zpráv je provedena korekce a ověřování před
+zapsáním nové pozice.
+
+\paragraph{}
+V dalším kroce je proveden tick míče, aktualizace jeho pohybu, detekce kolizí. Následně je vytvořena zpráva s
+aktuálním stavem hry, která je odeslána připojeným hráčům. V poslední řade je ověřován konec hry. V případě, že
+nějaký z hráčů dosáhne 10 bodů, je herní smyčka ukončena a hráči jsou informování o výhře. Po ukončení hry je hra
+smazána a vlákno ukončeno.
+
+\newpage
+\subsection{Klient}
+\paragraph{}
+Implementace herního klienta je provedena v jazyku Python (verze minimálně 3.7). Klient je realizován za pomocí
+multiplatformní sady \textit{pygame}. Všechna herní menu byla vytvořena za použití knihovny PyGameMenu. Alert boxy
+byly vytvořeny za využití modulu tkinter.
+
+\paragraph{}
+Při spuštění herního klienta je uživatel přivítán menu pro připojení. Zde je možné připojit se k běžícímu serveru po
+vyplnění IPv4 adresy, portu, herní přezdívky. Připojení vytváří nového uživatele. Znovupřipojení požádá server o
+přihlášení k již existujícímu uživatelskému účtu. Při registraci či připojení k serveru klient aktivně čeká maximálně
+dvě sekundy na odpověd od serveru, pokud mu v této době odpověd nepříjde nebo přijde záporná, odpojí se od serveru
+(pokud bylo spojení navázáno)
+
+\paragraph{}
+Po přihlášení se uživatel dostane do menu s lobby, kde může tlačítky vytvořit novou hru, obnovit seznam existujících
+her či se připojit k nějaké hře k seznamu. Po připojení uživatel začne posílat KeepAlive zprávy, které server
+informují od tom, že je spojení v pořádku. Odpověd na tyto zprávy také ujišťuje uživatele, že je stále připojen k
+serveru. Poslední možností uživatele v tomto menu je informování serveru o tom, že se klient bude odpojovat (validní
+ukončení spojení). Při ukončení spojení nebo jeho ztrátě je uživatel vrácen zpět do menu sloužícího k připojení.
+
+\paragraph{}
+V případě že si hráč vytvoří do hry nebo se připojí do hry již existující, je hráči přidělena herní pozice a spuštěna
+herní smyčka. Hra je zobrazována tvz. "na výšku". Hráč který se připojí jako první je hráč horní, druhá hráč je
+umístěn do spodní části herní plochy. Oba hráči se mohou pohybovat pouze doleva a doprava tak, aby nemohli opustit
+herní pole. Hratelný hráč je zobrazen jako čára zeleně, protivní je zobrazen v barvě červené. Míč je zobrazen jako
+fialový vyplněný kruh. Hra také vykresluje bíle středovou čáru, okolo které jsou na pravé straně vykresleny body
+jednotlivých hráčů. V případě, že je hra pozastavena, je ve středu obrazovky vypsán text PAUSED.
+
+\subsubsection{Herní smyčka a komunikace}
+\paragraph{}
+Jakýkoliv požadevek v menu aktivně čeká na odpověd od serveru nebo vypršení času, teprve poté je možné odeslat
+požadavek nový. Herní klient rozeznává v zásadě tři typy zpráv. Jedním typem je odpověd serveru na požadavek
+KeepAlive, který resetuje čas poslední komunikace. Druhým typem jsou zprávy řízení klienta, v rámci těchto zpráv se
+řeší připojení k serveru, registrace, odpověd na založení hry či připojení ke hře jiné. Poslední zprávy jsou zprávy
+herní, které mají svůj vlastní buffer.
+
+\paragraph{}
+V herní smyčce se nejprve ověřuje zda je stále platné připojení k serveru. Následně se procházejí přijaté herní
+zprávy a odpovědi od serveru na základě, kterých jsou spouštěny akce. Následně ověřujeme, zda se uživatel nechce
+pohnout, v případě že ano, pohyb ověříme a odešleme na server. V poslední řade aktualizujeme data a vykreslíme je
+(pozice hráčů, míčku, počet bodů, atd.).
+
+\paragraph{}
+Stejně jako na serveru je klient omezen na maximálně 30 průchodů smyčky za sekundu, díky čemuž klientu může dosahovat
+maximálně 30FPS.
+
+\newpage
+\section{Protokol}
+\paragraph{}
+Protokol vytvořený pro komunikace klientů se serverem je protokolem textovým (bytovým). Prokol vyhrazuje některé
+znaky (byte) jako znaky kontrolní.
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|l|}
+            \hline
+            Znak & Popis \\
+            \hline
+            \hline
+            < & Začátek zprávy \\
+            \hline
+            > & Ukončení zprávy \\
+            \hline
+            | & Oddělovač hlavičky a obsahu \\
+            \hline
+            : & Oddělovat klíče a hodnoty páru \\
+            \hline
+            ; & Oddělovač párů \\
+            \hline
+            \textbackslash & Escape znak \\
+            \hline
+        \end{tabular}
+        \caption{Seznam řídících znaků}
+    \end{table}
+
+\paragraph{}
+Zpráva se skládá z hlavičky a obsahu. Hlavička zprávy je vždy pevně daná a musí, v tomto pořadí, obsahovat
+\textit{identifikátor zprávy}, \textit{návratový identifikátor}, \textit{typ zprávy} a dekodér na serveru si ke
+zprávě sám přidává identifikátor odesílatele. Hlavičku nelze escapovat. Hodnota \textit{"id"} určuje pořadí zprávy.
+Hodnota \textit{"rid"} je nenulová pouze v případě, kdy je předpoklad, že se na zprávu bude odpovídat. Pokud klient
+pošle zprávu s RID 10, server odpoví se zprávou ID 10.
+
+\paragraph{}
+Obsah zprávy je tvořen dvojicí klíč a hodnota, které jsou odděleny znakem \textit{":"}. Dvojice je ukončena znakem
+\textit{";"}. U obsahu nezáleží na pořadí klíčů, důležitá je pouze jejich existence. Obsah lze escapovat znakem
+\textit{"\textbackslash"}, pro napsání escapovacího znaku je třeba napsat escapovací znak dvakrát za sebou (tj.
+\textit{"\textbackslash\textbackslash"}).
+
+\paragraph{}
+Zpráva vždy začíná počátečním znakem \textit{"<"} následovaným dvojicí ve formátu \textit{"id:\%d"}. Tu následující
+další dvě dvojice \textit{"rid:\%d"} a \textit{"type:\%d"}. Jednotlivé dvojice jsou oddělené znakem \textit{";"}.
+Následně je zde umístěn znak konce hlavičky \textit{"|"}. Dvojice v obsahu zprávy jsou pak načítány při splnění
+formátu \textit{"key:value;"} do nalezení koncového znaku \textit{">"} nebo přetečení maximální velikosti zprávy.
+
+
+\newpage
+\subsection{Seznam zpráv - klient}
+\subsubsection{KeepAlive}
+\textbf{Typ zprávy: } 1100 \newline
+Klient periodicky odesílá zprávu na server. Server posílá stejnou zprávu zpět. \newline
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            status & string & ok \\
+            \hline
+        \end{tabular}
+        \caption{Obsah KeepAlive zprávy - klient i server}
+    \end{table}
+
+\subsubsection{GameJoin}
+\textbf{Typ zprávy: } 2100 \newline
+Klient odesílá požadavek o připojení do hry. \newline
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            gameID & int & \%d \\
+            \hline
+            playerID & int & \%d \\
+            \hline
+        \end{tabular}
+        \caption{Obsah GameJoin zprávy - klient}
+    \end{table}
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            status & string & ok || error \\
+            \hline
+            msg & string & \%s \\
+            \hline
+            player & string & "1" || "2" \\
+            \hline
+        \end{tabular}
+        \caption{Obsah GameJoin zprávy - server}
+    \end{table}
+
+\subsubsection{GameCreate}
+\textbf{Typ zprávy: } 2000 \newline
+Klient odesílá požadavek o vytvoření hry. \newline
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            playerID & int & \%d \\
+            \hline
+        \end{tabular}
+        \caption{Obsah GameCreate zprávy - klient}
+    \end{table}
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            status & string & ok || error \\
+            \hline
+            msg & string & \%s \\
+            \hline
+            gameID & int & \%d \\
+            \hline
+        \end{tabular}
+        \caption{Obsah GameCreate zprávy - server}
+    \end{table}
+
+\subsubsection{GameList}
+\textbf{Typ zprávy: } 2300 \newline
+Klient odesílá požadavek o seznam existujících her. \newline
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            playerID & int & \%d \\
+            \hline
+        \end{tabular}
+        \caption{Obsah GameList zprávy - klient}
+    \end{table}
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            status & string & ok || error \\
+            \hline
+            msg & string & \%s \\
+            \hline
+            gameCount & int & \%d \\
+            \hline
+            gameID\%d & int & \%d (více klíčů) \\
+            \hline
+        \end{tabular}
+        \caption{Obsah GameList zprávy - server}
+    \end{table}
+
+\subsubsection{Reconnect}
+\textbf{Typ zprávy: } 2200 \newline
+Klient odesílá požadavek o znovupřipojení na existující účet. \newline
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            username & string & \%s \\
+            \hline
+        \end{tabular}
+        \caption{Obsah Reconnect zprávy - klient}
+    \end{table}
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            status & string & ok || error \\
+            \hline
+            msg & string & \%s \\
+            \hline
+            gameID & int & \%d \\
+            \hline
+            playerID & int & \%d \\
+            \hline
+            playas & string & "1" || "2 \\
+            \hline
+        \end{tabular}
+        \caption{Obsah Reconnect zprávy - server}
+    \end{table}
+
+\subsubsection{Register}
+\textbf{Typ zprávy: } 1000 \newline
+Klient odesílá požadavek o registraci. \newline
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            name & string & \%s \\
+            \hline
+        \end{tabular}
+        \caption{Obsah Register zprávy - klient}
+    \end{table}
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            status & string & ok || error \\
+            \hline
+            msg & string & \%s \\
+            \hline
+            playerID & int & \%d \\
+            \hline
+        \end{tabular}
+        \caption{Obsah Register zprávy - server}
+    \end{table}
+
+\subsubsection{GameAbandod}
+\textbf{Typ zprávy: } 2500 \newline
+Klient odesílá informaci o definitivním opuštění hry. Klient ignoruje odpověd. \newline
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            playerID & int & \%d \\
+            \hline
+        \end{tabular}
+        \caption{Obsah GameAbandon zprávy - klient}
+    \end{table}
+
+\subsubsection{PlayerUpdateState}
+\textbf{Typ zprávy: } 3000 \newline
+Klient odesílá informace pohybu na server. Server odpovídá zprávou 2400. Deprecated hodnoty jsou ignorovány serverem
+ale stále vyžadovány protokolem. \newline
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            playerID & int & \%d \\
+            \hline
+            x & int & \%d \\
+            \hline
+            y & int & \%d (deprecated) \\
+            \hline
+            paused & string & "true" || "false" (deprecated) \\
+            \hline
+        \end{tabular}
+        \caption{Obsah PlayerUpdateState zprávy - klient}
+    \end{table}
+
+\newpage
+\subsection{Seznam zpráv - server}
+
+\subsubsection{GameUpdateStateClient}
+\textbf{Typ zprávy: } 2400 \newline
+Server odesílá informace o aktuálním stavu hry (samovolně ale hlavně jako reakci na zprávu 3000). \newline
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            player1x & int & \%d \\
+            \hline
+            player1y & int & \%d \\
+            \hline
+            player2x & int & \%d \\
+            \hline
+            player2y & int & \%d \\
+            \hline
+            score1 & int & \%d \\
+            \hline
+            score2 & int & \%d \\
+            \hline
+            ballx & int & \%d \\
+            \hline
+            bally & int & \%d \\
+            \hline
+            ballspeed & int & \%d \\
+            \hline
+            ballrotation & int & \%d \\
+            \hline
+            paused & string & "true" || "false" \\
+            \hline
+        \end{tabular}
+        \caption{Obsah GameUpdateStateClient zprávy - odesílatel server}
+    \end{table}
+
+\subsubsection{GameEnd}
+\textbf{Typ zprávy: } 2400 \newline
+Server odesílá informaci o konci hry. Ignoruje protesty klienta. \newline
+
+    \begin{table}[H]
+        \centering
+        \begin{tabular}{|c|c|c|}
+            \hline
+            Klíč & Datový typ & Hodnota \\
+            \hline
+            \hline
+            status & string & "ok" \\
+            \hline
+            msg & string & "Player \%d won!" \\
+            \hline
+        \end{tabular}
+        \caption{Obsah GameEnd zprávy - odesílatel server}
+    \end{table}
+
+\newpage
+\section{Spuštění serveru a klienta}
+\paragraph{}
+Sestavení serveru vyžaduje nainstalované prostředí jazyka Golang v minimální verzi 1.13. Server lze sestavit příkazem
+\textit{go build .}, případně rovnou spustit příkazem \textit{go run .} (za předpokladu, že je terminál přepnut do
+složky se zdrojovým kódem serveru).
+
+\paragraph{}
+Sestavení klienta vyžaduje nainstalovaný interpret jazyka Python v minimální verzi 3.7. Dále je potřeba nainstalovat
+moduly pygame (\textit{pip3 install pygame}), PyGameMenu (\textit{pip3 install pygame-menu} a modul tkinter. Klient
+pak lze spustit z příkazové řádky příkazem \textit{python3 ./main.py}  (za předpokladu, že je terminál přepnut do
+složky se zdrojovým kódem klienta).
+
+\newpage
+\section{Závěr}
+\paragraph{}
+Před vytvářením této semestrální práce jsem měl nulové zkušenosti s vyvíjením her i s vyvíjením síťových aplikací.
+Také jsem neměl prakticky žádné zkušenosti s jazykem go. Jedinou výhodou byla moje základní znalost jazyka Python.
+
+\paragraph{}
+Vrámci tvorby aplikace jsem několikrát změnil technologii serveru i klienta, což mě stálo spoustu času, který mi na
+závěrečné odevzdání práce chyběl. Snažil jsem se proto vytvořit konečné řešení co nejrychleji jsem mohl. Musím však
+říci, že s prací nejsem spokojen, po této zkušenosti bych server i client navrhl jiným způsobem.
+
+\paragraph{}
+Přesto si však myslím, že jsem práci splnil, tedy aspoň v to doufám...
+
+\paragraph{}
+
+\newpage
+\listoftables
+
+\end{document}
