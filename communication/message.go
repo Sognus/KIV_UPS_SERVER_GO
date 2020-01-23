@@ -85,6 +85,8 @@ func Decoder(serverContext *Server, client *Client) {
 
 			// Fill source
 			msg.Source = client.UID
+			// Print message for debug
+			// fmt.Printf("message: %v\n", msg) 
 			serverContext.MessageChannel <- *msg
 		}
 

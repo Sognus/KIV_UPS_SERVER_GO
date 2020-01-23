@@ -392,6 +392,34 @@ func CreateGame(manager *Manager, creator *Player) (*GameServer,error) {
 	return &newGame,errAdd
 }
 
+func GetGameByPlayerID(manager *Manager, playerID int) (*GameServer, error) {
+	if manager == nil {
+		return nil, errors.New("manager cannot be NULL")
+	}
+
+	for _, game := range manager.GameServers {
+		fmt.Printf("reconnect find %d VS: \n", playerID)
+		
+		if game.Player1 != nil {
+			fmt.Printf("reconnect player1: %d\n", game.Player1.ID)
+			if game.Player1.ID == playerID {
+				return game, nil			
+			}	
+		}
+
+		if game.Player2 != nil {
+			fmt.Printf("reconnect player2: %d\n", game.Player2.ID)
+			if game.Player2.ID == playerID {
+				return game, nil				
+			}		
+		} 		
+	}
+
+	fmt.Println("reconnect game was not found")
+	return nil, errors.New("game was not found")
+
+}
+
 func GetGameByID(manager *Manager, gameID int) (*GameServer, error) {
 	if manager == nil {
 		return nil, errors.New("manager cannot be NULL")

@@ -152,14 +152,12 @@ func ReconnectAction(manager *Manager, message *communication.Message) error {
 	}
 
 	var player *Player = nil
-	for update, pl := range manager.Players {
+	for _, pl := range manager.Players {
 		if pl.userName == playerNameValue {
 			player = pl
 			// Add new TCP client to player
 			player.client = client
 			player.userName = playerNameValue
-			// Update player
-			manager.Players[update] = player
 			break
 		}
 	}
@@ -174,9 +172,11 @@ func ReconnectAction(manager *Manager, message *communication.Message) error {
 	}
 
 	// Check if player has game
-	game, errGame := GetPlayersGameByClientID(manager, player.client.UID)
+	game, errGame := GetGameByPlayerID(manager, player.ID)
+	fmt.Printf("game: %v\n", game)
+	fmt.Printf("errgame: %v\n", errGame)
 
-	if game == nil || errGame != nil {
+	if game == nil && errGame != nil {
 		// Player does not have game
 		data := []byte(fmt.Sprintf("<id:%d;rid:0;type:%d;|status:ok;playerID:%d;gameID:-1;>", message.Rid,  actionReconnectGame, player.ID))
 		_ = communication.SendID(manager.CommunicationServer, data, message.Source)

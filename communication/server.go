@@ -114,7 +114,7 @@ func RemoveClient(serverContext *Server, socketDescriptor int) error {
 
 		fmt.Printf("Client disconnected: #%d (%s:%d)\n", deleteClient.UID, deleteClient.ip, deleteClient.port)
 
-		delete((*serverContext).Clients, deleteClient.UID)
+		delete(serverContext.Clients, deleteClient.UID)
 		return nil
 	} else {
 		return errors.New("client did not exist")
@@ -128,7 +128,7 @@ func SendSocket(serverContext *Server, data []byte, socketSource int) error {
 		return errors.New("could not broadcast Message: Server structure is NULL\n")
 	}
 
-	for _, client := range (*serverContext).Clients {
+	for _, client := range serverContext.Clients {
 		if client.Socket == socketSource {
 			_, _ = syscall.Write(client.Socket, data)
 			break
@@ -143,7 +143,7 @@ func SendID(serverContext *Server, data []byte, clientID int) error {
 		return errors.New("could not broadcast Message: Server structure is NULL\n")
 	}
 
-	for _, client := range (*serverContext).Clients {
+	for _, client := range serverContext.Clients {
 		if client.UID == clientID {
 			_, _ = syscall.Write(client.Socket, data)
 			break
@@ -172,7 +172,7 @@ func BroadcastExceptSender(serverContext *Server, data []byte, socketSource int)
 		return errors.New("could not broadcast Message: Server structure is NULL\n")
 	}
 
-	for _, client := range (*serverContext).Clients {
+	for _, client := range serverContext.Clients {
 		if client.Socket != socketSource {
 			_, _ = syscall.Write(client.Socket, data)
 		}

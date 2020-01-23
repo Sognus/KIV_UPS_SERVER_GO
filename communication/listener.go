@@ -134,15 +134,10 @@ func Start(serverContext *Server) {
 				if n == 0 {
 					// Client was disconnected
 					_ = RemoveClient(serverContext, client.Socket)
-					// TODO:
-					//  	rewrite -> send message from server (id:0) to disconnect client via manager
-					//		when disconnect delete from server context and set player that has it to nil
 
 				} else {
 					// Write data
 					_, _ = client.writer.Write(buffer[:n])
-					// TODO:
-					//		Add lastCommunication (KeepAlive) to client and update it with every message
 
 				}
 
