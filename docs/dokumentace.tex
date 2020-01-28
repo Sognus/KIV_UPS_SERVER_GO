@@ -214,6 +214,7 @@ formátu \textit{"key:value;"} do nalezení koncového znaku \textit{">"} nebo p
 \subsection{Seznam zpráv - klient}
 \subsubsection{KeepAlive}
 \textbf{Typ zprávy: } 1100 \newline
+\textbf{Formát: } \newline  <id:INT;rid:INT;type:1100;|status:ok;> \newline
 Klient periodicky odesílá zprávu na server. Server posílá stejnou zprávu zpět. \newline
 
     \begin{table}[H]
@@ -231,6 +232,7 @@ Klient periodicky odesílá zprávu na server. Server posílá stejnou zprávu z
 
 \subsubsection{GameJoin}
 \textbf{Typ zprávy: } 2100 \newline
+\textbf{Formát: } \newline  <id:INT;rid:INT;type:2100;|gameID:INT;playerID:INT;> \newline
 Klient odesílá požadavek o připojení do hry. \newline
 
     \begin{table}[H]
@@ -267,6 +269,7 @@ Klient odesílá požadavek o připojení do hry. \newline
 
 \subsubsection{GameCreate}
 \textbf{Typ zprávy: } 2000 \newline
+\textbf{Formát: } \newline  <id:INT;rid:INT;type:2000;|playerID:INT;> \newline
 Klient odesílá požadavek o vytvoření hry. \newline
 
     \begin{table}[H]
@@ -301,6 +304,7 @@ Klient odesílá požadavek o vytvoření hry. \newline
 
 \subsubsection{GameList}
 \textbf{Typ zprávy: } 2300 \newline
+\textbf{Formát: } \newline  <id:INT;rid:INT;type:2300;|playerID:INT;> \newline
 Klient odesílá požadavek o seznam existujících her. \newline
 
     \begin{table}[H]
@@ -337,6 +341,7 @@ Klient odesílá požadavek o seznam existujících her. \newline
 
 \subsubsection{Reconnect}
 \textbf{Typ zprávy: } 2200 \newline
+\textbf{Formát: } \newline  <id:INT;rid:INT;type:2200;|username:STRING;> \newline
 Klient odesílá požadavek o znovupřipojení na existující účet. \newline
 
     \begin{table}[H]
@@ -375,6 +380,7 @@ Klient odesílá požadavek o znovupřipojení na existující účet. \newline
 
 \subsubsection{Register}
 \textbf{Typ zprávy: } 1000 \newline
+\textbf{Formát: } \newline  <id:INT;rid:INT;type:1000;|name:STRING;> \newline
 Klient odesílá požadavek o registraci. \newline
 
     \begin{table}[H]
@@ -409,6 +415,7 @@ Klient odesílá požadavek o registraci. \newline
 
 \subsubsection{GameAbandod}
 \textbf{Typ zprávy: } 2500 \newline
+\textbf{Formát: } \newline  <id:INT;rid:INT;type:2500;|playerID:INT;> \newline
 Klient odesílá informaci o definitivním opuštění hry. Klient ignoruje odpověd. \newline
 
     \begin{table}[H]
@@ -426,6 +433,7 @@ Klient odesílá informaci o definitivním opuštění hry. Klient ignoruje odpo
 
 \subsubsection{PlayerUpdateState}
 \textbf{Typ zprávy: } 3000 \newline
+\textbf{Formát: } \newline  <id:INT;rid:INT;type:3000;|playerID:INT;x:INT;y:INT;paused:STR-BOOL;> \newline
 Klient odesílá informace pohybu na server. Server odpovídá zprávou 2400. Deprecated hodnoty jsou ignorovány serverem
 ale stále vyžadovány protokolem. \newline
 
@@ -506,6 +514,31 @@ Server odesílá informaci o konci hry. Ignoruje protesty klienta. \newline
         \end{tabular}
         \caption{Obsah GameEnd zprávy - odesílatel server}
     \end{table}
+
+\newpage
+\subsection{Kontext klienta}
+\subsubsection{Kontext klienta na serveru}
+\paragraph{}
+Klient po připojení k serveru může v zásadě existovat v několika kontextech. Kontextem je myšleno to, jak server vidí
+připojeného klienta. Na základě tohoto kontextu zpracuje různé typy zpráv, které v opačném případě odmítá.
+\paragraph{}
+Po navázání spojení je klient ve stavu UNREGISTERED. V tomto kontextu server od klienta přijímá pouze zprávy 1000
+(REGISTER) a 2200 (RECONNECT). Na všechny ostatní zprávy odpovídá odpovědí obsahující indikaci chybového stavu
+\paragraph{}
+V případě úspěšného zpracování zprávy ve stavu UNREGISERED se klient pro server stává REGISTERED. Ve stavu
+registered server zpracovává zprávy 1100 (KeepAlive), 2000 (GameCreate),
+2100 (GameJoin), 2300 (GameList),
+\paragraph{}
+Po úspěšném založení hry, po připojení k existující hře či znovupřipojení po ztraceném spojení je klient pro server
+ve stavu PLAYING. V tomto stavu server zpracovává zprávy 2500 (GameAbandon) a 3000 (UpdatePlayerState).
+
+\subsubsection{Kontext v herním klientu}
+Klient implementuje podobný kontext jako na serveru. Klient může být ve stavu NOT-CONNECTED, kdy je uživateli v GUI
+zobrazeno menu pro zadání adresy, portu serveru a jména. Po úspěšné registraci je uživatel přesunut do stavu
+CONNECTED, kdy je mu zobrazeno menu po připojení do existující hry či založení nové (případně odpojení od serveru).
+Posledním stavem je stav PLAYING, kdy se uživateli vykresluje hra synchronizovaná se stavem hry na serveru a uživatel
+může odesílat změnu pozice své platformy na server.
+
 
 \newpage
 \section{Spuštění serveru a klienta}
